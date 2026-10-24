@@ -63,14 +63,14 @@ Yappy is the editor inside Yapifier: Claude Opus 5.5 with vision and two tools t
 <p align="center"><img src="docs/media/how-yappy-works.png" width="100%" alt="How Yappy works: 1 you pause, click and say the fix; 2 Yappy reads every note and frame; 3 it calls track and look; 4 your browser runs them on the original video and sends the results back; 5 Yappy returns edit ops in a strict JSON schema; 6 the browser checks and clamps every op and saves a new version"></p>
 
 - **`look(times)`** shows Yappy frames from up to six moments: where the dead air really ends, when an animation settles, what comes next.
-- **`track(box, at)`** answers *"how long does this stay on screen?"*. The browser compares that box, frame by frame, with the frame you paused on, and reports when it changes. That's how a blur covers the whole time an email is visible, and not the next scene.
+- **`track(box, at)`** answers *"how long does this stay on screen?"*. The browser samples nearby frames (every half second, then narrowing down to about 0.03 s) and estimates when the content in that fixed box stops matching the frame you paused on. That's how a blur covers the time an email is visible, and not the next scene. It's an estimate for a box that stays put, so check it.
 - **Every op is checked before it lands.** Claude's output is a strict JSON schema, then [`src/edit/ops.ts`](src/edit/ops.ts) validates and clamps each op (times inside the video, boxes inside the frame, sensible zoom and speed), refuses a cut that would remove the whole video, and gives every new blur a safety margin.
 - **Your timing wins.** When you ask for timing on purpose (*"from 5 to 12 seconds"*, *"the whole video"*), Yappy marks it exact and it's kept as given. Otherwise a new overlay is fitted to the time its content looks unchanged, and the note tells you so.
 
 <table>
   <tr>
     <td width="42%"><img src="docs/media/yappy-log.png" alt="How Yappy did it: reading notes, checking where the dead air ends, tracking the email, the button, the prize and the table, a suggested range for the blur, done in 15.7 s"></td>
-    <td><b>Nothing is hidden.</b> After every Apply, <i>How Yappy did it</i> keeps the steps: which frames it looked at, which boxes it tracked and what it found, and anything Yapifier adjusted afterwards.<br><br>Each note then lists the edits it actually produced, worked out from the final version, so a reply can never claim something that didn't happen.</td>
+    <td><b>Nothing is hidden.</b> After every Apply, <i>How Yappy did it</i> keeps the steps: which frames it looked at, which boxes it tracked and what it found, and anything Yapifier adjusted afterwards.<br><br>Each note then lists the edits it produced, with their final times and positions taken from the saved version, so you can check every reply against what was actually applied.</td>
   </tr>
 </table>
 
@@ -171,7 +171,7 @@ Measured on the sample with its five notes (cut, zoom, spotlight, blur, label), 
 |---|---|
 | One Apply, five notes, Claude included | 15.7–20.5 s, with one round of checking the video |
 | Claude calls per Apply | 2 (one to plan and call tools, one to answer), 3 if an answer misses a note |
-| Tracking the email box | on screen 30.84–32.31 s; checked frame by frame, it fades in at about 30.6 s and is gone by 32.2 s |
+| Tracking the email box | estimated on screen 30.84–32.31 s; checked by hand on individual frames, it fades in at about 30.6 s and is gone by 32.2 s |
 | Blur coverage after fitting | 30.49–32.66 s (padding covers the fade) |
 | Export | real time: a 34-second edit takes about 34 seconds |
 

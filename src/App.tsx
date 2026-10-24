@@ -524,14 +524,23 @@ export default function App() {
     }
   };
 
-  // Hold O (or the Original button) to see the untouched footage at this same moment.
+  // Hold O (or the Original button) to see the untouched footage at this same
+  // moment. Letting go returns to the exact edited position, which a source time
+  // can't express inside a title card or freeze.
+  const peekFrom = useRef(0);
   const peek = useCallback(
     (on: boolean) => {
       if (!player || exporting || on === peeking) return;
-      const srcT = locate(player.segs, player.outT).srcT;
       player.pause();
-      player.setEdits(on ? [] : viewEdits);
-      player.seek(on ? srcT : srcToOut(player.segs, srcT));
+      if (on) {
+        peekFrom.current = player.outT;
+        const srcT = locate(player.segs, player.outT).srcT;
+        player.setEdits([]);
+        player.seek(srcT);
+      } else {
+        player.setEdits(viewEdits);
+        player.seek(peekFrom.current);
+      }
       setPeeking(on);
     },
     [player, exporting, peeking, viewEdits],
