@@ -1,0 +1,17 @@
+{
+  "name": "directors-chair-spikes",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5199 --strictPort",
+    "claude-edit": "node --env-file-if-exists=../.env.local claude-edit.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.135.0",
+    "mp4-muxer": "5.2.2"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vite": "8.3.4"
+  }
+}

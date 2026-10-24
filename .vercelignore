@@ -1,0 +1,6 @@
+spikes
+planning
+node_modules.nosync
+.env
+.env.*
+.claude

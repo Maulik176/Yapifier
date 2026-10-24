@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Director's Chair spike</title>
+    <style>
+      :root { color-scheme: dark; --bg: #0d0b14; --panel: #17142a; --text: #ece9f6; --muted: #9a93b8; --accent: #7c5cff; --pin: #ffcc00; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 Inter, system-ui, sans-serif; }
+      main { max-width: 1180px; margin: 0 auto; padding: 20px 16px 48px; }
+      h1 { font-size: 20px; margin: 0 0 4px; }
+      p.hint { color: var(--muted); margin: 0 0 16px; }
+      .stage { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 12px; overflow: hidden; cursor: crosshair; }
+      canvas { width: 100%; height: 100%; display: block; }
+      .controls { display: flex; gap: 12px; align-items: center; margin-top: 10px; }
+      button { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 8px 14px; font: inherit; cursor: pointer; }
+      input[type="range"] { flex: 1; }
+      .timeline { position: relative; height: 14px; margin-top: 6px; background: var(--panel); border-radius: 7px; }
+      .marker { position: absolute; top: 2px; width: 10px; height: 10px; border-radius: 50%; background: var(--pin); transform: translateX(-50%); }
+      .popover { position: absolute; width: min(360px, 80%); background: var(--panel); border: 1px solid var(--accent); border-radius: 10px; padding: 10px; display: none; box-shadow: 0 8px 30px #0008; cursor: default; }
+      .popover .target { color: var(--pin); font-size: 13px; margin-bottom: 6px; }
+      .popover textarea { width: 100%; min-height: 70px; background: #0d0b14; color: var(--text); border: 1px solid #332c55; border-radius: 6px; padding: 8px; font: inherit; resize: vertical; }
+      .popover .row { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; color: var(--muted); font-size: 12px; }
+      .pin { position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; border: 3px solid var(--pin); pointer-events: none; display: none; }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 20px; }
+      @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+      section { background: var(--panel); border-radius: 10px; padding: 12px; min-width: 0; }
+      section h2 { font-size: 14px; margin: 0 0 8px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+      ol, ul { margin: 0; padding-left: 18px; }
+      li { margin-bottom: 6px; overflow-wrap: anywhere; }
+      .tag { font-size: 11px; padding: 1px 6px; border-radius: 4px; background: #2b2450; color: var(--muted); margin-left: 6px; }
+      .voice { background: #1f4d2e; color: #9be3b0; }
+      pre { margin: 0; max-height: 260px; overflow: auto; font-size: 12px; color: var(--muted); white-space: pre-wrap; }
+      a { color: #b9a8ff; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Director's Chair: pointing + Flow spike</h1>
+      <p class="hint">Click anything in the video. It pauses and a note box opens. Hold <b>Fn</b> and say what to change, then press <b>Enter</b>. Typing also works. <a href="/export.html">Export spike →</a></p>
+      <div class="stage" id="stage">
+        <canvas id="canvas"></canvas>
+        <div class="pin" id="pin"></div>
+        <div class="popover" id="popover">
+          <div class="target" id="target"></div>
+          <textarea id="note" placeholder="Hold Fn and talk…"></textarea>
+          <div class="row"><span id="source">waiting for words</span><span>Enter to save · Esc to cancel</span></div>
+        </div>
+      </div>
+      <div class="controls">
+        <button id="play">Pause</button>
+        <input type="range" id="scrub" min="0" max="10" step="0.01" value="0" />
+        <span id="time">0.00s</span>
+      </div>
+      <div class="timeline" id="timeline"></div>
+      <div class="grid">
+        <section><h2>Notes</h2><ol id="notes"></ol></section>
+        <section><h2>Input events (what Flow sends)</h2><pre id="log"></pre></section>
+      </div>
+    </main>
+    <script type="module" src="/src/director.ts"></script>
+  </body>
+</html>
