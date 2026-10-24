@@ -1,6 +1,6 @@
 // The only way a film changes: a list of field edits, each checked and clamped
 // here before it lands. Shared by the browser and the server (no DOM imports).
-import { ENTER_PRESETS, SPRING_NAMES, type AppliedChange, type El, type Film, type Scene } from "./types";
+import { ENTER_PRESETS, SPRING_NAMES, type AppliedChange, type El, type Film, type Scene } from "./types.js";
 
 export interface Edit {
   targetId: string; // an element id, or a scene id for scene_* fields

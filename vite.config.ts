@@ -1,6 +1,6 @@
 import { defineConfig, loadEnv, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
-import { handleApply } from "./server/apply";
+import { handleApply } from "./server/apply.js";
 
 // In local dev, serve /api/apply from the same handler Vercel runs in production.
 function localApi(): Plugin {

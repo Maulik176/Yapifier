@@ -2,8 +2,8 @@
 // The browser applies the edits through src/engine/edits.ts, which re-checks
 // every value, so nothing here can push an invalid film to the screen.
 import type AnthropicClient from "@anthropic-ai/sdk";
-import { ALL_FIELDS } from "../src/engine/edits";
-import { ENTER_PRESETS, SPRING_NAMES, type Film } from "../src/engine/types";
+import { ALL_FIELDS } from "../src/engine/edits.js";
+import { ENTER_PRESETS, SPRING_NAMES, type Film } from "../src/engine/types.js";
 
 const MODEL = process.env.APPLY_MODEL ?? "claude-opus-5-5";
 const EFFORT = (process.env.APPLY_EFFORT ?? "low") as "low" | "medium" | "high";
