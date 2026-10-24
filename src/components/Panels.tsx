@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { describe } from "../edit/ops";
 import { formatTime } from "../edit/timeline";
-import type { Edit, Note, Version } from "../edit/types";
+import type { AgentStep, Edit, Note, Version } from "../edit/types";
 import { KIND_COLOR } from "./Timeline";
 
 // Reply to the editor's question. Same Flow detection as the note box.
@@ -37,6 +37,10 @@ function AnswerBox({ onAnswer }: { onAnswer: (text: string, spoken: boolean) => 
   );
 }
 
+// Wispr Flow types a whole dictation in one go, like a paste. We can see that, but
+// not tell it apart from an ordinary paste, so the label says both.
+export const INSERTED_HINT = "Inserted in one go, the way Wispr Flow types a dictation. An ordinary paste looks the same.";
+
 const STATUS: Record<Note["status"], string> = { pending: "waiting", applied: "applied", question: "needs you", failed: "failed" };
 
 export function NotesPanel({
@@ -61,13 +65,15 @@ export function NotesPanel({
           </button>
           <div className="note-body">
             <div className="note-meta">
-              <span className={n.spoken ? "chip chip-voice" : "chip"}>{n.spoken ? "🎙 spoken" : "typed"}</span>
+              <span className={n.spoken ? "chip chip-voice" : "chip"} title={n.spoken ? INSERTED_HINT : undefined}>
+                {n.spoken ? "Flow or paste" : "typed"}
+              </span>
               <span className={`chip chip-${n.status}`}>{STATUS[n.status]}</span>
               <span className="muted">{n.author}</span>
             </div>
             <p className="note-text">“{n.text}”</p>
             {n.reply && <p className={n.status === "question" ? "note-reply question" : "note-reply"}>{n.reply}</p>}
-            {n.answer && n.status === "pending" && <p className="note-answer">Your answer{n.answerSpoken ? " (spoken)" : ""}: “{n.answer}”</p>}
+            {n.answer && n.status === "pending" && <p className="note-answer">Your answer{n.answerSpoken ? " (Flow or paste)" : ""}: “{n.answer}”</p>}
             {n.status === "question" && <AnswerBox onAnswer={(text, spoken) => onAnswer(n.id, text, spoken)} />}
           </div>
           {n.status === "pending" && (
@@ -140,5 +146,52 @@ export function EditsList({
           </li>
         ))}
     </ul>
+  );
+}
+
+const STEP_ICON: Record<AgentStep["kind"], string> = { read: "◎", look: "◉", track: "⌖", fit: "↔", done: "✓", error: "!" };
+
+// What Yappy, the editor agent, is doing while it applies notes; folded away afterwards.
+export function AgentLog({ steps, running }: { steps: AgentStep[]; running: boolean }) {
+  if (!steps.length) return null;
+  const list = (
+    <ol className="agent-steps">
+      {steps.map((s, i) => (
+        <li key={i} className={`agent-step agent-${s.kind}`}>
+          <span className="agent-icon" aria-hidden>
+            {STEP_ICON[s.kind]}
+          </span>
+          <span>
+            {s.text}
+            {s.detail && <span className="muted"> · {s.detail}</span>}
+          </span>
+        </li>
+      ))}
+      {running && (
+        <li className="agent-step">
+          <span className="agent-icon spin" aria-hidden>
+            ◌
+          </span>
+          <span className="muted">Working…</span>
+        </li>
+      )}
+    </ol>
+  );
+  return running ? (
+    <div className="agent-log" aria-live="polite">
+      <div className="agent-head">
+        <img className="agent-avatar" src="/icon.svg" alt="" width={20} height={20} />
+        Yappy is on it
+      </div>
+      {list}
+    </div>
+  ) : (
+    <details className="agent-log">
+      <summary className="agent-head">
+        <img className="agent-avatar" src="/icon.svg" alt="" width={20} height={20} />
+        How Yappy did it
+      </summary>
+      {list}
+    </details>
   );
 }

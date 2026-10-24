@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { formatTime } from "../edit/timeline";
+import { INSERTED_HINT } from "./Panels";
 
 interface Props {
   px: number;
@@ -60,7 +61,9 @@ export default function NotePopover({ px, py, stageW, stageH, t, targetName, onS
         }}
       />
       <div className="note-row">
-        <span className={spoken ? "chip chip-voice" : "chip"}>{!text ? "listening for Flow" : spoken ? "spoken with Flow" : pasted ? "spoken + typed" : "typed"}</span>
+        <span className={spoken ? "chip chip-voice" : "chip"} title={INSERTED_HINT}>
+          {!text ? "waiting for Flow" : spoken ? "inserted by Flow or paste" : pasted ? "inserted + typed" : "typed"}
+        </span>
         <span className="muted">Enter to save · Esc to cancel</span>
       </div>
     </div>

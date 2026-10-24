@@ -1,6 +1,6 @@
 // The only way the edit list changes: ops from Claude, each checked and
 // clamped here before it lands. Shared by the browser and the server.
-import { formatTime } from "./timeline.js";
+import { buildTimeline, formatTime, outDuration } from "./timeline.js";
 import { EDIT_KINDS, type Change, type Edit, type EditKind } from "./types.js";
 
 // Claude fills every field; -1 (numbers) or "" (text) means "not set".
@@ -41,7 +41,7 @@ export function describe(e: Edit): string {
     case "highlight":
       return `Spotlight an area, ${span}`;
     case "blur":
-      return `Blur an area, ${span}`;
+      return `${e.solid ? "Mask" : "Blur"} an area, ${span}`;
     case "freeze":
       return `Freeze ${e.duration}s ${span}`;
     case "title":
@@ -50,6 +50,8 @@ export function describe(e: Edit): string {
       return e.level === 0 ? `Mute ${span}` : `Volume ${Math.round(e.level * 100)}% for ${span}`;
   }
 }
+
+const MIN_LEFT = 0.5; // seconds of video an edit must leave
 
 let counter = 0;
 const newId = (kind: string) => `${kind}-${Date.now().toString(36)}-${counter++}`;
@@ -111,7 +113,8 @@ function shape(kind: EditKind, prev: Partial<Edit> & Record<string, unknown>, op
       }
       const cx = clamp(bx, 0, 0.98);
       const cy = clamp(by, 0, 0.98);
-      return { ...span, kind, x: r2(cx), y: r2(cy), w: r2(clamp(w, 0.02, 1 - cx)), h: r2(clamp(h, 0.02, 1 - cy)) };
+      const box = { x: r2(cx), y: r2(cy), w: r2(clamp(w, 0.02, 1 - cx)), h: r2(clamp(h, 0.02, 1 - cy)) };
+      return kind === "blur" ? { ...span, kind, ...box, ...(prev.solid ? { solid: true } : {}) } : { ...span, kind, ...box };
     }
   }
   return "unknown kind";
@@ -147,13 +150,14 @@ export function applyOps(edits: Edit[], ops: Op[], noteId: string, duration: num
       continue;
     }
     shaped.noteId = noteId;
-    if (prev) {
-      next = next.map((e) => (e.id === prev.id ? shaped : e));
-      changes.push({ noteId, label: `Changed: ${describe(shaped)}` });
-    } else {
-      next.push(shaped);
-      changes.push({ noteId, label: describe(shaped) });
+    const candidate = prev ? next.map((e) => (e.id === prev.id ? shaped : e)) : [...next, shaped];
+    // Cuts and speed-ups must leave something to watch.
+    if (outDuration(buildTimeline(candidate, duration)) < MIN_LEFT) {
+      rejected.push(`${kind}: that would cut the whole video`);
+      continue;
     }
+    next = candidate;
+    changes.push({ noteId, label: prev ? `Changed: ${describe(shaped)}` : describe(shaped) });
   }
   return { edits: next, changes, rejected };
 }

@@ -1,7 +1,7 @@
 // Light or dark. Follows the system until the viewer picks one with the
 // toggle; the pick is remembered in this browser. index.html sets the first
 // value before paint, so there's no flash of the wrong theme.
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 
 export type Theme = "light" | "dark";
 
@@ -21,7 +21,9 @@ function saved(): Theme | null {
 export function useTheme(): [Theme, () => void] {
   const [theme, setTheme] = useState<Theme>(() => saved() ?? system());
 
-  useEffect(() => {
+  // A layout effect, so the new colours are in place before any canvas redraws
+  // in a regular effect (the timeline reads them when it draws).
+  useLayoutEffect(() => {
     document.documentElement.dataset.theme = theme;
     document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.setAttribute("content", BG[theme]));
   }, [theme]);

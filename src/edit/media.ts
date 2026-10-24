@@ -6,19 +6,42 @@ import type { Source } from "./types";
 export const MAX_UPLOAD_MB = 500;
 export const MAX_SECONDS = 5 * 60;
 
-export function readSource(url: string, name: string, isSample: boolean): Promise<Source> {
+const CANT_DECODE = "This browser can't play that video. Try Chrome or Edge, or an MP4 (H.264) or WebM file.";
+
+// Waits for one media event, failing on the element's error event or after a
+// timeout, so a file the browser can't decode never leaves the editor stuck.
+export function mediaEvent(el: HTMLMediaElement, event: "loadedmetadata" | "loadeddata" | "seeked", ms = 10_000): Promise<void> {
   return new Promise((resolve, reject) => {
-    const v = document.createElement("video");
-    v.preload = "metadata";
-    v.muted = true;
-    v.onloadedmetadata = () => {
-      if (!v.videoWidth) return reject(new Error("That file has no video track."));
-      if (v.duration > MAX_SECONDS) return reject(new Error(`Please use a video under ${MAX_SECONDS / 60} minutes.`));
-      resolve({ name, url, duration: v.duration, width: v.videoWidth, height: v.videoHeight, isSample });
+    const finish = (fn: () => void) => {
+      clearTimeout(timer);
+      el.removeEventListener(event, ok);
+      el.removeEventListener("error", fail);
+      fn();
     };
-    v.onerror = () => reject(new Error("This browser can't play that file. Try an MP4 (H.264) or WebM."));
-    v.src = url;
+    const ok = () => finish(resolve);
+    const fail = () => finish(() => reject(new Error(CANT_DECODE)));
+    const timer = setTimeout(() => finish(() => reject(new Error("The video stopped responding. Reload the page and try again, or try Chrome."))), ms);
+    el.addEventListener(event, ok);
+    el.addEventListener("error", fail);
   });
+}
+
+export function seekTo(el: HTMLMediaElement, t: number): Promise<void> {
+  const seeked = mediaEvent(el, "seeked");
+  el.currentTime = t;
+  return seeked;
+}
+
+export async function readSource(url: string, name: string, isSample: boolean): Promise<Source> {
+  const v = document.createElement("video");
+  v.preload = "metadata";
+  v.muted = true;
+  const ready = mediaEvent(v, "loadedmetadata");
+  v.src = url;
+  await ready;
+  if (!v.videoWidth) throw new Error("That file has no video track.");
+  if (v.duration > MAX_SECONDS) throw new Error(`Please use a video under ${MAX_SECONDS / 60} minutes.`);
+  return { name, url, duration: v.duration, width: v.videoWidth, height: v.videoHeight, isSample };
 }
 
 // Evenly spaced frames from the source, for the filmstrip.
@@ -26,16 +49,16 @@ export async function thumbnails(url: string, duration: number, count: number): 
   const v = document.createElement("video");
   v.muted = true;
   v.preload = "auto";
+  const ready = mediaEvent(v, "loadeddata");
   v.src = url;
-  await new Promise<void>((r) => (v.onloadeddata = () => r()));
+  await ready;
   const c = document.createElement("canvas");
   c.height = 72;
   c.width = Math.round((v.videoWidth / v.videoHeight) * 72);
   const ctx = c.getContext("2d")!;
   const out: string[] = [];
   for (let i = 0; i < count; i++) {
-    v.currentTime = ((i + 0.5) / count) * duration;
-    await new Promise<void>((r) => (v.onseeked = () => r()));
+    await seekTo(v, ((i + 0.5) / count) * duration);
     ctx.drawImage(v, 0, 0, c.width, c.height);
     out.push(c.toDataURL("image/jpeg", 0.6));
   }

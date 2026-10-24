@@ -1,16 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import EditHandles, { isSpatial } from "./components/EditHandles";
+import Inspector, { type Adjustment } from "./components/Inspector";
 import Landing from "./components/Landing";
 import NotePopover from "./components/NotePopover";
-import { EditsList, NotesPanel, VersionsPanel } from "./components/Panels";
+import { AgentLog, EditsList, NotesPanel, VersionsPanel } from "./components/Panels";
 import Stage from "./components/Stage";
 import Timeline from "./components/Timeline";
-import { exportFormat, MAX_UPLOAD_MB, readSource, recordExport, snapshot, thumbnails, waveform } from "./edit/media";
+import { runTool, type ToolCall } from "./edit/agent";
+import { exportFormat, MAX_UPLOAD_MB, mediaEvent, readSource, recordExport, seekTo, snapshot, thumbnails, waveform } from "./edit/media";
 import { applyOps, describe, type Op } from "./edit/ops";
 import { Player } from "./edit/player";
 import { toSource } from "./edit/render";
-import { SAMPLE, SAMPLE_NOTES } from "./edit/sample";
+import { SAMPLE, SAMPLE_NOTES, sampleUrl } from "./edit/sample";
 import { formatTime, srcToOut } from "./edit/timeline";
-import type { Change, Edit, Note, Source, Version } from "./edit/types";
+import { Footage, fitToFootage } from "./edit/track";
+import type { AgentStep, Change, Edit, Note, Source, Version } from "./edit/types";
+import { clearProject, loadProject, loadVideo, saveProject, saveVideo, type SavedProject } from "./save";
 import { useTheme } from "./theme";
 
 interface PendingPin {
@@ -37,6 +42,8 @@ interface Undone {
   notes: Note[];
 }
 
+const MAX_NOTES_PER_RUN = 8; // matches MAX_NOTES in server/apply.ts
+
 let nextId = 1;
 const newId = () => `n${nextId++}`;
 
@@ -50,6 +57,7 @@ export default function App() {
   const [versions, setVersions] = useState<Version[]>([{ n: 1, edits: [], changes: [] }]);
   const [viewing, setViewing] = useState(1);
   const [notes, setNotes] = useState<Note[]>([]);
+  const [agentLog, setAgentLog] = useState<AgentStep[]>([]);
   const [pin, setPin] = useState<PendingPin | null>(null);
   const [ui, setUi] = useState({ outT: 0, srcT: 0, playing: false });
   const [thumbs, setThumbs] = useState<string[]>([]);
@@ -59,36 +67,62 @@ export default function App() {
   const [download, setDownload] = useState<{ url: string; name: string } | null>(null);
   const [exporting, setExporting] = useState<{ w: number; h: number } | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const [draft, setDraft] = useState<Edit | null>(null); // an edit being dragged on the video
   const [redo, setRedo] = useState<Undone[]>([]);
+  const [saved, setSaved] = useState<SavedProject | null>(null); // a project from an earlier visit, offered on the landing page
+  const [hasVideo, setHasVideo] = useState(false); // the open upload is stored in the browser too
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+
+  useEffect(() => {
+    void loadProject().then((p) => p && setSaved(p));
+  }, []);
 
   useEffect(() => {
     if (videoRef.current && !player) setPlayer(new Player(videoRef.current));
   }, [player]);
 
+  const footage = useMemo(() => (source ? new Footage(source.url, source.duration) : null), [source]);
   const latest = versions[versions.length - 1];
   const shown = versions.find((v) => v.n === viewing) ?? latest;
   const isLatest = shown.n === latest.n;
   const pending = notes.filter((n) => n.status === "pending");
 
-  useEffect(() => {
-    player?.setEdits(shown.edits);
-  }, [player, shown]);
+  // The selected edit on the latest version, with any drag in progress applied.
+  const selectedEdit = isLatest && selected ? ((draft?.id === selected ? draft : latest.edits.find((e) => e.id === selected)) ?? null) : null;
+  // While a zoom is selected and paused, show the frame unzoomed so its window can be aimed.
+  const aimingZoom = selectedEdit?.kind === "zoom" && !ui.playing && !exporting;
+  const viewEdits = useMemo(() => {
+    let list = draft && isLatest ? shown.edits.map((e) => (e.id === draft.id ? draft : e)) : shown.edits;
+    if (aimingZoom) list = list.filter((e) => e.id !== selected);
+    return list;
+  }, [shown.edits, draft, isLatest, aimingZoom, selected]);
 
+  useEffect(() => {
+    player?.setEdits(viewEdits);
+  }, [player, viewEdits]);
+
+  // Opens a video, fresh or with a saved project's notes and versions. Resolves true when it worked.
   const open = useCallback(
-    async (url: string, name: string, isSample: boolean) => {
-      if (!player) return;
+    async (url: string, name: string, isSample: boolean, restore?: SavedProject): Promise<boolean> => {
+      if (!player) return false;
       setOpening(true);
       setError(null);
       try {
         const src = await readSource(url, name, isSample);
+        if (restore && Math.abs(src.duration - restore.source.duration) > 0.5) throw new Error("That isn't the video from your saved project: its length is different.");
         player.pause();
-        player.video.src = url;
+        const decodes = mediaEvent(player.video, "loadeddata");
         player.video.preload = "auto";
+        player.video.src = url;
+        await decodes;
         player.load(src.duration, []);
         player.seek(0);
-        setVersions([{ n: 1, edits: [], changes: [] }]);
-        setViewing(1);
-        setNotes([]);
+        setVersions(restore?.versions ?? [{ n: 1, edits: [], changes: [] }]);
+        setViewing(restore?.viewing ?? 1);
+        setNotes(restore?.notes ?? []);
+        for (const n of restore?.notes ?? []) nextId = Math.max(nextId, Number(n.id.slice(1)) + 1 || 0);
+        setSaved(null);
+        setAgentLog([]);
         setSelected(null);
         setRedo([]);
         setPin(null);
@@ -96,10 +130,12 @@ export default function App() {
         setThumbs([]);
         setPeaks(null);
         setSource(src);
-        void thumbnails(url, src.duration, 24).then(setThumbs);
+        thumbnails(url, src.duration, 24).then(setThumbs, () => setThumbs([]));
         void waveform(url).then(setPeaks);
+        return true;
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
+        return false;
       } finally {
         setOpening(false);
       }
@@ -107,11 +143,43 @@ export default function App() {
     [player],
   );
 
-  const openFile = (file: File) => {
-    if (!file.type.startsWith("video/")) return setError("That isn't a video file. Try an MP4 or WebM.");
-    if (file.size > MAX_UPLOAD_MB * 1024 * 1024) return setError(`Please use a video under ${MAX_UPLOAD_MB} MB.`);
-    void open(URL.createObjectURL(file), file.name, false);
+  const checkFile = (file: File) => {
+    if (!file.type.startsWith("video/")) return "That isn't a video file. Try an MP4 or WebM.";
+    if (file.size > MAX_UPLOAD_MB * 1024 * 1024) return `Please use a video under ${MAX_UPLOAD_MB} MB.`;
+    return null;
   };
+
+  const openFile = async (file: File, restore?: SavedProject) => {
+    const problem = checkFile(file);
+    if (problem) return setError(problem);
+    if (await open(URL.createObjectURL(file), restore?.source.name ?? file.name, false, restore)) setHasVideo(await saveVideo(file));
+  };
+
+  const openSample = async () => {
+    if (await open(sampleUrl(), SAMPLE.name, true)) setHasVideo(await saveVideo(null));
+  };
+
+  // Pick up a saved project: the sample reloads by itself, an upload from browser storage if it fit there.
+  const resume = async () => {
+    if (!saved) return;
+    if (saved.source.isSample) return void open(sampleUrl(), saved.source.name, true, saved);
+    const video = saved.hasFile ? await loadVideo() : undefined;
+    if (!video) return setError(`Choose “${saved.source.name}” again to pick up where you left off.`);
+    if (await open(URL.createObjectURL(video), saved.source.name, false, saved)) setHasVideo(true);
+  };
+
+  // Autosave: the project (not the undo history) shortly after anything changes.
+  useEffect(() => {
+    if (!source) return;
+    const timer = setTimeout(() => {
+      const { name, duration, width, height, isSample } = source;
+      saveProject({ source: { name, duration, width, height, isSample }, versions, viewing, notes, savedAt: Date.now(), hasFile: hasVideo }).then(
+        () => setSavedAt(Date.now()),
+        () => setSavedAt(null),
+      );
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [source, versions, viewing, notes, hasVideo]);
 
   const togglePlay = useCallback(() => {
     if (!player || exporting) return;
@@ -133,6 +201,10 @@ export default function App() {
   const point = useCallback(
     (ox: number, oy: number, px: number, py: number, stageW: number, stageH: number) => {
       if (!player || exporting) return;
+      if (selected) {
+        setSelected(null); // a click away from a selected edit just lets go of it
+        return;
+      }
       if (!isLatest) {
         setError(`You're looking at ${shown.n === 1 ? "the original" : `v${shown.n}`}. Switch to v${latest.n} to leave notes.`);
         return;
@@ -142,7 +214,7 @@ export default function App() {
       const at = toSource(player.edits, srcT, ox, oy);
       setPin({ outT: player.outT, srcT, x: at.x, y: at.y, px, py, stageW, stageH });
     },
-    [player, exporting, isLatest, shown.n, latest.n, ui.srcT],
+    [player, exporting, selected, isLatest, shown.n, latest.n, ui.srcT],
   );
 
   const saveNote = (text: string, spoken: boolean) => {
@@ -157,53 +229,99 @@ export default function App() {
   const loadSampleNotes = async () => {
     if (!player || !source) return;
     setBusy("Loading sample notes…");
-    const v = document.createElement("video");
-    v.muted = true;
-    v.src = source.url;
-    await new Promise<void>((r) => (v.onloadeddata = () => r()));
-    const c = document.createElement("canvas");
-    c.width = 640;
-    c.height = Math.round((source.height / source.width) * 640);
-    const made: Note[] = [];
-    for (const s of SAMPLE_NOTES) {
-      v.currentTime = s.srcT;
-      await new Promise<void>((r) => (v.onseeked = () => r()));
-      c.getContext("2d")!.drawImage(v, 0, 0, c.width, c.height);
-      made.push({ ...s, id: newId(), outT: srcToOut(player.segs, s.srcT), spoken: false, author: "Sample", status: "pending", frame: c.toDataURL("image/jpeg", 0.72) });
-    }
-    setNotes((all) => [...all, ...made]);
-    setBusy(null);
-  };
-
-  const apply = useCallback(async () => {
-    if (!player || !source || !pending.length || busy) return;
-    setBusy(`Applying ${pending.length} note${pending.length > 1 ? "s" : ""}…`);
     setError(null);
     try {
-      const res = await fetch("/api/apply", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          source: { duration: source.duration, width: source.width, height: source.height },
-          edits: latest.edits,
-          notes: pending.map(({ id, srcT, x, y, text, frame, question, answer }) => ({ id, srcT, x, y, text, frame, question, answer })),
-        }),
-      });
-      const data = await res.json().catch(() => ({ error: "The server sent back something unreadable." }));
-      if (!res.ok) throw new Error(data.error ?? `Apply failed (${res.status}).`);
+      const v = document.createElement("video");
+      v.muted = true;
+      const ready = mediaEvent(v, "loadeddata");
+      v.src = source.url;
+      await ready;
+      const c = document.createElement("canvas");
+      c.width = 640;
+      c.height = Math.round((source.height / source.width) * 640);
+      const made: Note[] = [];
+      for (const s of SAMPLE_NOTES) {
+        await seekTo(v, s.srcT);
+        c.getContext("2d")!.drawImage(v, 0, 0, c.width, c.height);
+        made.push({ ...s, id: newId(), outT: srcToOut(player.segs, s.srcT), spoken: false, author: "Sample", status: "pending", frame: c.toDataURL("image/jpeg", 0.72) });
+      }
+      setNotes((all) => [...all, ...made]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
 
+  // Yappy, the editor agent: each request is one step. When Claude asks to look at
+  // or track part of the video, the browser does it and sends the results back
+  // with the next step, until Claude returns the edits.
+  const apply = useCallback(async () => {
+    if (!player || !source || !footage || !pending.length || busy) return;
+    const started = performance.now();
+    const count = `${pending.length} note${pending.length > 1 ? "s" : ""}`;
+    setBusy(`Applying ${count}…`);
+    setError(null);
+    const log: AgentStep[] = [];
+    const step = (s: AgentStep) => {
+      log.push(s);
+      setAgentLog([...log]);
+    };
+    let rounds = 0;
+    try {
+      // The server takes up to 8 notes per run, so bigger sets go in batches,
+      // each one building on the edits the last one made.
+      const batches: Note[][] = [];
+      for (let k = 0; k < pending.length; k += MAX_NOTES_PER_RUN) batches.push(pending.slice(k, k + MAX_NOTES_PER_RUN));
       let edits: Edit[] = latest.edits;
       const changes: Change[] = [];
       const outcome = new Map<string, Pick<Note, "status" | "reply" | "question">>();
-      for (const r of data.results as ApplyResult[]) {
-        const result = applyOps(edits, r.ops ?? [], r.noteId, source.duration);
-        edits = result.edits;
-        changes.push(...result.changes);
-        const skipped = result.rejected.length ? `Skipped: ${result.rejected.join("; ")}.` : "";
-        const question = [r.question, skipped].filter(Boolean).join(" ");
-        const reply = [result.changes.length ? r.summary : "", question || (result.changes.length ? "" : "Nothing could be changed for this note.")].filter(Boolean).join(" ");
-        outcome.set(r.noteId, { status: question || !result.changes.length ? "question" : "applied", reply, question: question || undefined });
+      for (const [b, batch] of batches.entries()) {
+        const what = `${batch.length} note${batch.length > 1 ? "s" : ""}`;
+        step({ kind: "read", text: `Reading ${what} and the frames you paused on`, detail: batches.length > 1 ? `batch ${b + 1} of ${batches.length}` : undefined });
+        const request = {
+          source: { duration: source.duration, width: source.width, height: source.height },
+          edits,
+          notes: batch.map(({ id, srcT, x, y, text, frame, question, answer }) => ({ id, srcT, x, y, text, frame, question, answer })),
+        };
+        const transcript: unknown[] = [];
+        let results: ApplyResult[] | null = null;
+        while (!results) {
+          const res = await fetch("/api/apply", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...request, transcript }) });
+          const data = await res.json().catch(() => ({ error: "The server sent back something unreadable." }));
+          if (!res.ok) throw new Error(data.error ?? `Apply failed (${res.status}).`);
+          if (data.results) results = data.results as ApplyResult[];
+          else {
+            const toolResults = await Promise.all((data.calls as ToolCall[]).map((c) => runTool(footage, c, step)));
+            const ids = batch.map((n) => n.id).join(", ");
+            const reminder = { type: "text", text: `When you have what you need, return one result for every note: ${ids}.` };
+            transcript.push({ role: "assistant", content: data.content }, { role: "user", content: [...toolResults, reminder] });
+            rounds++;
+          }
+        }
+        for (const r of results) {
+          const result = applyOps(edits, r.ops ?? [], r.noteId, source.duration);
+          edits = result.edits;
+          changes.push(...result.changes);
+          const skipped = result.rejected.length ? `Skipped: ${result.rejected.join("; ")}.` : "";
+          const question = [r.question, skipped].filter(Boolean).join(" ");
+          const reply = [result.changes.length ? r.summary : "", question || (result.changes.length ? "" : "Nothing could be changed for this note.")].filter(Boolean).join(" ");
+          outcome.set(r.noteId, { status: question || !result.changes.length ? "question" : "applied", reply, question: question || undefined });
+        }
       }
+
+      // Safety net: new overlays stay on only while what they cover is on screen.
+      const before = new Map(latest.edits.map((e) => [e.id, JSON.stringify(e)]));
+      const fresh = new Set(edits.filter((e) => before.get(e.id) !== JSON.stringify(e)).map((e) => e.id));
+      const pinnedAt = new Map(pending.map((n) => [n.id, n.srcT]));
+      const fit = await fitToFootage(footage, edits, fresh, (e) => (e.noteId ? pinnedAt.get(e.noteId) : undefined));
+      edits = fit.edits;
+      for (const { before: b, after: a } of fit.fitted) {
+        for (const c of changes) c.label = c.label.replace(describe(b), describe(a));
+        if ("start" in a && "start" in b && Math.abs(a.start - b.start) + Math.abs(a.end - b.end) > 0.3)
+          step({ kind: "fit", text: `Fitted the ${a.kind} to when it's on screen`, detail: `${formatTime(a.start)}–${formatTime(a.end)}` });
+      }
+      step({ kind: "done", text: `Done in ${((performance.now() - started) / 1000).toFixed(1)} s`, detail: rounds ? `checked the video ${rounds === 1 ? "once" : `${rounds} times`}` : undefined });
       setNotes((all) => all.map((n) => (outcome.has(n.id) ? { ...n, ...outcome.get(n.id)! } : n.status === "pending" ? { ...n, status: "failed", reply: "No answer came back for this note." } : n)));
       if (changes.length) {
         setRedo([]);
@@ -218,11 +336,13 @@ export default function App() {
         player.play();
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const message = e instanceof Error ? e.message : String(e);
+      setError(message);
+      step({ kind: "error", text: message });
     } finally {
       setBusy(null);
     }
-  }, [player, source, pending, busy, latest]);
+  }, [player, source, footage, pending, busy, latest]);
 
   // Hand changes (remove, restore) become a new version too, so they can be undone.
   const commit = useCallback(
@@ -271,16 +391,53 @@ export default function App() {
     setViewing(last.version.n);
   }, [redo, busy]);
 
-  // Select an edit and show it: title and freeze cards from their first frame, others just before they start.
+  // Select an edit and show it: title and freeze cards from their first frame,
+  // boxes and labels a moment in (so they can be dragged), the rest just before they start.
   const pick = useCallback(
     (e: Edit | null) => {
       setSelected(e?.id ?? null);
       if (!e || !player) return;
       const hold = player.segs.find((s) => s.type === "hold" && s.edit.id === e.id);
-      seek(hold ? hold.out0 : Math.max(0, srcToOut(player.segs, "start" in e ? e.start : e.at) - (e.kind === "cut" ? 1 : 0.2)));
+      if (hold) return seek(hold.out0);
+      if (!("start" in e)) return seek(srcToOut(player.segs, e.at));
+      if (isSpatial(e)) return seek(srcToOut(player.segs, e.start + Math.min(0.5, (e.end - e.start) / 2)));
+      seek(Math.max(0, srcToOut(player.segs, e.start) - (e.kind === "cut" ? 1 : 0.2)));
     },
     [player, seek],
   );
+
+  // Hand adjustments to one edit fold into a single version, so one undo reverts them all.
+  const tweak = useCallback(
+    (next: Edit) => {
+      if (busy) return;
+      const edits = latest.edits.map((e) => (e.id === next.id ? next : e));
+      const changes = [{ noteId: "", label: `Adjusted: ${describe(next)}` }];
+      if (latest.tweak === next.id) setVersions((all) => [...all.slice(0, -1), { ...latest, edits, changes }]);
+      else {
+        const n = latest.n + 1;
+        setVersions((all) => [...all, { n, edits, changes, tweak: next.id }]);
+        setViewing(n);
+        setRedo([]);
+      }
+    },
+    [latest, busy],
+  );
+
+  // Typed and slider changes go through the same checks as Claude's ops.
+  const adjust = (e: Edit, { solid, ...fields }: Adjustment) => {
+    if (!source) return;
+    let next: Edit | undefined = e;
+    if (Object.keys(fields).length) {
+      const op: Op = { op: "update", kind: e.kind, id: e.id, start: -1, end: -1, at: -1, duration: -1, x: -1, y: -1, w: -1, h: -1, scale: -1, rate: -1, level: -1, text: "", sub: "", ...fields };
+      if (Object.values(fields).some((v) => typeof v === "number" && !Number.isFinite(v))) return setError("Enter a number of seconds, like 12.5.");
+      const result = applyOps(latest.edits, [op], e.noteId ?? "", source.duration);
+      if (result.rejected.length) return setError(`Couldn't change that: ${result.rejected[0].replace(/^\w+: /, "")}.`);
+      next = result.edits.find((x) => x.id === e.id);
+    }
+    if (next && solid !== undefined && next.kind === "blur") next = { ...next, solid };
+    setError(null);
+    if (next) tweak(next);
+  };
 
   const doExport = async () => {
     if (!player || !source) return;
@@ -341,14 +498,8 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [source, player, togglePlay, seek, apply, point, undo, redoLast, removeEdit, selected, isLatest]);
 
-  const spokenShare = useMemo(() => {
-    const words = (s: string) => s.split(/\s+/).filter(Boolean).length;
-    const total = notes.reduce((sum, n) => sum + words(n.text) + words(n.answer ?? ""), 0);
-    const spoken = notes.reduce((sum, n) => sum + (n.spoken ? words(n.text) : 0) + (n.answerSpoken ? words(n.answer ?? "") : 0), 0);
-    return total ? Math.round((spoken / total) * 100) : null;
-  }, [notes]);
 
-  (window as unknown as { __yap: unknown }).__yap = { player, versions, notes, source };
+  (window as unknown as { __yap: unknown }).__yap = { player, versions, notes, source, footage };
 
   const length = player?.length ?? 0;
   const [theme, toggleTheme] = useTheme();
@@ -357,7 +508,16 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <button className="brand" onClick={() => source && confirm("Start over with a new video? Your notes will be cleared.") && setSource(null)} disabled={!source}>
+        <button
+          className="brand"
+          onClick={() => {
+            if (!source || !confirm("Start over with a new video? Your notes and edits will be cleared.")) return;
+            void clearProject();
+            setSource(null);
+            setSavedAt(null);
+          }}
+          disabled={!source}
+        >
           <img className="logo-mark" src="/icon.svg" alt="" width={28} height={28} />
           Yapifier
         </button>
@@ -366,6 +526,11 @@ export default function App() {
             <span className="file-chip" title={source.name}>
               {source.name}
             </span>
+            {savedAt && (
+              <span className="saved-chip" title="Notes, edits and versions are kept in this browser, so a refresh doesn't lose them">
+                ✓ Saved
+              </span>
+            )}
             <div className="spacer" />
             <ol className="steps" aria-label="How it works">
               <li>
@@ -392,7 +557,21 @@ export default function App() {
         </button>
       </header>
 
-      {!source && <Landing onFile={openFile} onSample={() => void open(SAMPLE.url, SAMPLE.name, true)} error={error} loading={opening || !player} />}
+      {!source && (
+        <Landing
+          onFile={(f) => void openFile(f)}
+          onSample={() => void openSample()}
+          saved={saved}
+          onResume={() => void resume()}
+          onResumeFile={(f) => saved && void openFile(f, saved)}
+          onDiscard={() => {
+            void clearProject();
+            setSaved(null);
+          }}
+          error={error}
+          loading={opening || !player}
+        />
+      )}
 
       {source && player && (
         <main className="editor">
@@ -424,6 +603,18 @@ export default function App() {
                     onCancel={() => setPin(null)}
                   />
                 </>
+              )}
+              {selectedEdit && isSpatial(selectedEdit) && !ui.playing && !exporting && "start" in selectedEdit && ui.srcT >= selectedEdit.start - 0.05 && ui.srcT <= selectedEdit.end + 0.05 && (
+                <EditHandles
+                  edit={selectedEdit}
+                  viewEdits={viewEdits}
+                  srcT={ui.srcT}
+                  onDraft={setDraft}
+                  onCommit={(e) => {
+                    setDraft(null);
+                    tweak(e);
+                  }}
+                />
               )}
               {exporting && <div className="stage-banner">Recording your edit in real time, with sound. Keep this tab open.</div>}
             </Stage>
@@ -473,7 +664,6 @@ export default function App() {
             <div className="panel notes-panel">
               <div className="panel-head">
                 <h2>Notes</h2>
-                {spokenShare !== null && <span className="chip chip-voice">{spokenShare}% spoken with Flow</span>}
               </div>
               {notes.length ? (
                 <NotesPanel
@@ -496,8 +686,12 @@ export default function App() {
                   )}
                 </div>
               )}
+              <AgentLog steps={agentLog} running={!!busy?.startsWith("Applying")} />
+              {pending.length > 0 && !busy && (
+                <p className="sends muted small">Apply sends Yappy (powered by Claude) your note text, the frames you paused on, and any frames it checks. The video file stays in your browser.</p>
+              )}
               <button className="primary" disabled={!pending.length || !!busy} onClick={() => void apply()}>
-                {busy?.startsWith("Applying") ? busy : pending.length ? `Apply ${pending.length} note${pending.length > 1 ? "s" : ""}` : "Apply notes"}
+                {busy?.startsWith("Applying") ? "Yappy is working…" : pending.length ? `Apply ${pending.length} note${pending.length > 1 ? "s" : ""}` : "Apply notes"}
               </button>
               {error && <p className="error">{error}</p>}
               {download && (
@@ -522,6 +716,17 @@ export default function App() {
                 <EditsList edits={shown.edits} selected={isLatest ? selected : null} removable={isLatest && !busy} onPick={pick} onRemove={removeEdit} />
               ) : (
                 <p className="muted small edits-empty">{isLatest ? "No edits yet. Apply a note and each edit shows up here, with × to remove it." : "No edits in this version."}</p>
+              )}
+              {selectedEdit && (
+                <Inspector
+                  key={selectedEdit.id}
+                  edit={selectedEdit}
+                  srcT={ui.srcT}
+                  inView={!("start" in selectedEdit) || (ui.srcT >= selectedEdit.start - 0.05 && ui.srcT <= selectedEdit.end + 0.05)}
+                  onAdjust={(a) => adjust(selectedEdit, a)}
+                  onJump={() => pick(selectedEdit)}
+                  onClose={() => setSelected(null)}
+                />
               )}
               {!isLatest && (
                 <button className="primary restore" onClick={() => restore(shown.n)} disabled={!!busy}>

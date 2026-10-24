@@ -154,6 +154,19 @@ export function renderFrame(ctx: Ctx, W: number, H: number, video: HTMLVideoElem
     const h = (b.h / v.sh) * H;
     if (video.readyState < 2 || w < 2 || h < 2) continue;
     pixelCanvas ??= document.createElement("canvas");
+    if (b.solid) {
+      // One averaged pixel of the area: an opaque patch that still sits in the frame's colours.
+      pixelCanvas.width = 1;
+      pixelCanvas.height = 1;
+      const pc = pixelCanvas.getContext("2d", { willReadFrequently: true })!;
+      pc.drawImage(video, b.x * vw, b.y * vh, b.w * vw, b.h * vh, 0, 0, 1, 1);
+      const [r, g, bl] = pc.getImageData(0, 0, 1, 1).data;
+      ctx.fillStyle = `rgb(${r},${g},${bl})`;
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, Math.min(w, h) * 0.12);
+      ctx.fill();
+      continue;
+    }
     const cells = Math.max(4, Math.round(w / 18));
     pixelCanvas.width = cells;
     pixelCanvas.height = Math.max(2, Math.round((h / w) * cells));

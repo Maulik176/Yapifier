@@ -72,6 +72,7 @@ export function buildTimeline(edits: Edit[], duration: number): Segment[] {
 export const outDuration = (segs: Segment[]) => (segs.length ? segs[segs.length - 1].out1 : 0);
 
 export function locate(segs: Segment[], outT: number): { seg: Segment; srcT: number } {
+  if (!segs.length) return { seg: { type: "play", src0: 0, src1: 0, rate: 1, out0: 0, out1: 0 }, srcT: 0 };
   const t = Math.max(0, Math.min(outT, outDuration(segs) - EPS));
   const seg = segs.find((s) => t >= s.out0 && t < s.out1) ?? segs[segs.length - 1];
   if (seg.type === "hold") return { seg, srcT: seg.src };

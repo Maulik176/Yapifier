@@ -4,8 +4,15 @@
 // deliberately rough so every edit type has something to fix.
 export const SAMPLE = {
   url: "/samples/no-hands-sample.mp4",
+  webm: "/samples/no-hands-sample.webm",
   name: "Sample: No Hands challenge teaser (36 s)",
 };
+
+// Some Chromium builds ship without H.264, so fall back to the WebM copy there.
+export function sampleUrl(): string {
+  const h264 = document.createElement("video").canPlayType('video/mp4; codecs="avc1.64001F, mp4a.40.2"');
+  return h264 ? SAMPLE.url : SAMPLE.webm;
+}
 
 // srcT in seconds, x/y as fractions of the frame, matched to what's on screen.
 export const SAMPLE_NOTES = [

@@ -15,7 +15,8 @@ export interface Speed extends Base { kind: "speed"; start: number; end: number;
 export interface Zoom extends Base { kind: "zoom"; start: number; end: number; x: number; y: number; scale: number }
 export interface Callout extends Base { kind: "callout"; start: number; end: number; x: number; y: number; text: string }
 export interface Highlight extends Base { kind: "highlight"; start: number; end: number; x: number; y: number; w: number; h: number }
-export interface Blur extends Base { kind: "blur"; start: number; end: number; x: number; y: number; w: number; h: number }
+// solid: an opaque mask in the area's own average colour instead of pixelation.
+export interface Blur extends Base { kind: "blur"; start: number; end: number; x: number; y: number; w: number; h: number; solid?: boolean }
 export interface Freeze extends Base { kind: "freeze"; at: number; duration: number }
 export interface Title extends Base { kind: "title"; at: number; duration: number; text: string; sub: string }
 export interface Volume extends Base { kind: "volume"; start: number; end: number; level: number }
@@ -60,4 +61,12 @@ export interface Version {
   n: number;
   edits: Edit[];
   changes: Change[];
+  tweak?: string; // set when this version holds hand adjustments to one edit, so further tweaks to it fold in
+}
+
+// One line of Yappy's visible work while it applies notes.
+export interface AgentStep {
+  kind: "read" | "look" | "track" | "fit" | "done" | "error";
+  text: string;
+  detail?: string;
 }

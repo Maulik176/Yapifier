@@ -64,7 +64,7 @@ export default function Stage({ player, aspect, notes, exportCanvas, canvasRef, 
       className="stage"
       style={{ aspectRatio: String(aspect) }}
       onClick={(e) => {
-        if ((e.target as HTMLElement).closest(".note-popover, .pin-dot")) return;
+        if ((e.target as HTMLElement).closest(".note-popover, .pin-dot, .edit-handles > *")) return;
         const rect = canvasRef.current!.getBoundingClientRect();
         const px = e.clientX - rect.left;
         const py = e.clientY - rect.top;

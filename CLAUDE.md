@@ -1,8 +1,8 @@
 # Yapifier
 
-Voice-driven video editor, built for the WeMakeDevs × Wispr Flow "No Hands" hackathon (solo, Builders track, due Fri 30 Oct 2026 11:59 pm IST, our freeze Thu 29 Oct). Brief, judging and dates: `planning/BRIEF.md`.
+Voice-driven video editor, built for the WeMakeDevs × Wispr Flow "No Hands" hackathon (solo, Builders track; the official page now says submissions close Sat 31 Oct 2026, 11:59 pm IST; our target is Fri 30 Oct, freeze Thu 29 Oct). Brief, judging and dates: `planning/BRIEF.md`.
 
-You pause any video, click the spot, hold Fn and say the change with Wispr Flow. Claude looks at the paused frame and returns edit ops, and the app re-renders the edit. **Edits never touch the footage's pixels:** they are laid over and around it (zoom, callout, highlight, blur, cut, speed, freeze, title card, volume).
+You pause any video, click the spot, hold Fn and say the change with Wispr Flow. Yappy, the editor agent (Claude), looks at the paused frame, checks the rest of the video with tools that run in the browser (`look` at frames, `track` how long a box's content stays on screen), and returns edit ops; the app re-renders the edit. **Edits never touch the footage's pixels:** they are laid over and around it (zoom, callout, highlight, blur, cut, speed, freeze, title card, volume).
 
 - Live: https://yapifier.vercel.app (Vercel project `yapifier`). **Every push to `main` auto-deploys to production.**
 - Repo: https://github.com/Maulik176/Yapifier (private).
@@ -24,9 +24,12 @@ npm run build      # typecheck + production build into dist/
   - `render.ts`: paints one frame (zoom window, pixelated blur, spotlight, callouts, title cards); `toSource`/`toOutput` map clicks through a zoom.
   - `player.ts`: drives the `<video>` through cuts, speed changes and holds; routes audio through Web Audio for volume edits and recording.
   - `media.ts`: upload reading, filmstrip thumbnails, waveform, frame snapshots, real-time export (MediaRecorder, MP4 where supported).
-  - `sample.ts`: the sample video and its 5 sample notes. **Their coordinates must match what is on screen in the sample.**
-- `src/components/`: Landing, Stage (canvas + pins + note box), Timeline, Panels (notes with frames, answer box, versions), NotePopover.
-- `server/apply.ts`: the `/api/apply` handler (prompt, JSON schema, redaction, rate limits). `api/apply.ts` is the Vercel wrapper; `vite.config.ts` mounts the same handler in dev.
+  - `track.ts`: `Footage` (a second hidden `<video>` for reading original frames and grayscale patches) and box tracking; `fitToFootage` clamps fresh overlays to when their content is on screen (a blur covers all of it, plus padding for fades).
+  - `agent.ts`: runs the agent's `look` and `track` tool calls in the browser and builds the tool results.
+  - `sample.ts`: the sample video (MP4, with a WebM copy for browsers without H.264) and its 5 sample notes. **Their coordinates must match what is on screen in the sample.**
+- `src/components/`: Landing (with the resume card), Stage (canvas + pins + note box), Timeline, Panels (notes, answer box, agent log, edits list, versions), NotePopover, Inspector (exact times, text, strength, blur style for the selected edit), EditHandles (drag and resize the selected edit on the video).
+- `src/save.ts`: autosave of the project (and the uploaded video, when it fits) in IndexedDB; the landing page offers to resume it. Hand adjustments to one edit fold into a single version (`Version.tweak`).
+- `server/apply.ts`: the `/api/apply` handler, **one agent step per request** (prompt, tools, JSON schema, redaction, rate limits). The browser sends the run so far as `transcript` and must send assistant turns back unchanged (thinking blocks included); the first user message is rebuilt identically each step. Only the first step counts as an apply for rate limits. `api/apply.ts` is the Vercel wrapper; `vite.config.ts` mounts the same handler in dev.
 - `public/samples/no-hands-sample.mp4`: the judges' sample (720p web copy).
 - `sample-video/`: the HyperFrames project that makes the sample (see below).
 - `planning/`: brief, plan, research and icon options. Not deployed.
@@ -60,4 +63,5 @@ A 36 s HyperFrames film ("No Hands" teaser, marked as not official) with five pl
 - Use `font-family:` (not the `font:` shorthand) for bundled fonts, or the renderer falls back to another face.
 - Render: `npx hyperframes@0.8.191 render --output renders/no-hands-sample.mp4`. Then make the web copy:
   `ffmpeg -i sample-video/renders/no-hands-sample.mp4 -vf scale=1280:-2 -c:v libx264 -preset slow -crf 21 -pix_fmt yuv420p -movflags +faststart -af loudnorm=I=-15:TP=-1.5:LRA=11 -ar 48000 -c:a aac -b:a 160k public/samples/no-hands-sample.mp4`
+  Then the WebM copy: `ffmpeg -i public/samples/no-hands-sample.mp4 -c:v libvpx-vp9 -b:v 0 -crf 34 -deadline good -cpu-used 4 -row-mt 1 -c:a libopus -b:a 128k public/samples/no-hands-sample.webm`
 - If the sample changes, re-check the sample notes' `srcT`, `x` and `y` in `src/edit/sample.ts`.
