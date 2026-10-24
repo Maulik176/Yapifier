@@ -110,30 +110,67 @@ export function exportFormat(): { mime: string; ext: string } | null {
 }
 
 // Records the edited timeline in real time: the export canvas for picture,
-// the player's audio graph for sound.
-export async function recordExport(player: Player, canvas: HTMLCanvasElement, onProgress: (p: number) => void): Promise<{ blob: Blob; ext: string }> {
+// the player's audio graph for sound. Stops with an error if the recorder fails
+// or playback stalls (a hidden tab), and on cancel; always cleans up.
+export async function recordExport(
+  player: Player,
+  canvas: HTMLCanvasElement,
+  onProgress: (p: number) => void,
+  signal: AbortSignal,
+): Promise<{ blob: Blob; ext: string }> {
   const fmt = exportFormat();
   if (!fmt) throw new Error("This browser can't record video. Use Chrome or Edge to export.");
-  const stream = new MediaStream([...canvas.captureStream(30).getVideoTracks(), ...player.recordStream().getAudioTracks()]);
+  const video = canvas.captureStream(30).getVideoTracks();
+  const stream = new MediaStream([...video, ...player.recordStream().getAudioTracks()]);
   const recorder = new MediaRecorder(stream, { mimeType: fmt.mime, videoBitsPerSecond: 5_000_000, audioBitsPerSecond: 160_000 });
   const chunks: Blob[] = [];
   recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
-  const done = new Promise<void>((r) => (recorder.onstop = () => r()));
-  player.pause();
-  player.seek(0);
-  await new Promise((r) => setTimeout(r, 300)); // let the first frame land
-  recorder.start(500);
-  const timer = setInterval(() => onProgress(player.outT / player.length), 250);
-  await new Promise<void>((resolve) => {
-    player.onEnd = () => resolve();
-    player.play();
-  });
-  player.onEnd = null;
-  await new Promise((r) => setTimeout(r, 250));
-  recorder.stop();
-  await done;
-  clearInterval(timer);
-  stream.getVideoTracks().forEach((t) => t.stop());
-  onProgress(1);
-  return { blob: new Blob(chunks, { type: fmt.mime.split(";")[0] }), ext: fmt.ext };
+  let timer = 0;
+  let cleanup = () => {};
+  try {
+    player.pause();
+    player.seek(0);
+    await new Promise((r) => setTimeout(r, 300)); // let the first frame land
+    recorder.start(500);
+    await new Promise<void>((resolve, reject) => {
+      let lastT = -1;
+      let movedAt = performance.now();
+      const fail = (error: Error) => {
+        cleanup();
+        reject(error);
+      };
+      const onAbort = () => fail(new DOMException("Export cancelled.", "AbortError"));
+      cleanup = () => {
+        clearInterval(timer);
+        player.onEnd = null;
+        signal.removeEventListener("abort", onAbort);
+      };
+      if (signal.aborted) return onAbort();
+      signal.addEventListener("abort", onAbort);
+      recorder.onerror = () => fail(new Error("The browser's recorder failed. Try exporting again."));
+      player.onEnd = () => {
+        cleanup();
+        resolve();
+      };
+      timer = window.setInterval(() => {
+        onProgress(player.outT / player.length);
+        if (player.outT !== lastT) {
+          lastT = player.outT;
+          movedAt = performance.now();
+        } else if (performance.now() - movedAt > 8000) fail(new Error("Playback stalled during export. Keep this tab in front and try again."));
+      }, 250);
+      player.play();
+    });
+    await new Promise((r) => setTimeout(r, 250));
+    const stopped = new Promise<void>((r) => (recorder.onstop = () => r()));
+    recorder.stop();
+    await stopped;
+    onProgress(1);
+    return { blob: new Blob(chunks, { type: fmt.mime.split(";")[0] }), ext: fmt.ext };
+  } finally {
+    cleanup();
+    player.pause();
+    if (recorder.state !== "inactive") recorder.stop();
+    video.forEach((t) => t.stop()); // the audio track belongs to the player and is reused
+  }
 }

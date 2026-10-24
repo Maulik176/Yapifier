@@ -35,7 +35,7 @@ const NUM = { type: "number" };
 const OP_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["op", "kind", "id", "start", "end", "at", "duration", "x", "y", "w", "h", "scale", "rate", "level", "text", "sub"],
+  required: ["op", "kind", "id", "start", "end", "at", "duration", "x", "y", "w", "h", "scale", "rate", "level", "text", "sub", "exact"],
   properties: {
     op: { type: "string", enum: ["add", "update", "remove"] },
     kind: { type: "string", enum: EDIT_KINDS },
@@ -45,6 +45,10 @@ const OP_SCHEMA = {
     scale: NUM, rate: NUM, level: NUM,
     text: { type: "string" },
     sub: { type: "string" },
+    exact: {
+      type: "boolean",
+      description: "true when the director asked for this timing on purpose (explicit times, 'the whole video', 'even when the scene changes'); the app then keeps it exactly instead of fitting it to when the content is on screen.",
+    },
   },
 };
 
@@ -123,7 +127,7 @@ You only get the paused frames up front, so check the rest of the video before y
 - look(times): frames at up to 6 moments, when you need to see what happens around the pin.
 Make every call you need in one turn, in parallel; one round is usually enough, never more than three. Then reply with the result JSON, with one result for every note, including the ones you checked with tools. Mention the tracked span in the summary when it shaped the timing, e.g. "Blurs the email while it's on screen (29.4–33.1 s)".
 
-Every op must fill every field: use -1 for numbers and "" for text the op doesn't need. For add, id is "". To change or remove an existing edit, use its id from the list provided. Do that when the director says something like "make that label shorter" or "remove the zoom".
+Every op must fill every field: use -1 for numbers and "" for text the op doesn't need. Set exact to true when the director asked for the timing on purpose (explicit times, "the whole video", "even when the background changes"), so it isn't narrowed to the tracked span; otherwise false. For add, id is "". To change or remove an existing edit, use its id from the list provided. Do that when the director says something like "make that label shorter" or "remove the zoom".
 
 If a note asks to change something inside the footage (recolour a button, move a logo, add music or a voiceover), say in "question" that Yapifier edits on top of the video, and offer the closest thing it can do (a callout, a highlight, a title card) as ops if it fits.
 

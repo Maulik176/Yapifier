@@ -12,7 +12,7 @@ import { applyOps, describe, type Op } from "./edit/ops";
 import { Player } from "./edit/player";
 import { toSource } from "./edit/render";
 import { SAMPLE, SAMPLE_NOTES, sampleUrl } from "./edit/sample";
-import { formatTime, srcToOut } from "./edit/timeline";
+import { formatTime, locate, srcToOut } from "./edit/timeline";
 import { Footage, fitToFootage } from "./edit/track";
 import type { AgentStep, Change, Edit, Note, Source, Version } from "./edit/types";
 import { clearProject, loadProject, loadVideo, saveProject, saveVideo, type SavedProject } from "./save";
@@ -43,6 +43,19 @@ interface Undone {
 }
 
 const MAX_NOTES_PER_RUN = 8; // matches MAX_NOTES in server/apply.ts
+const APPLY_DEADLINE_MS = 150_000;
+const WIDE = "(min-width: 1021px)"; // matches the two-column layout in styles.css
+
+function useMedia(query: string): boolean {
+  const [on, setOn] = useState(() => matchMedia(query).matches);
+  useEffect(() => {
+    const m = matchMedia(query);
+    const change = () => setOn(m.matches);
+    m.addEventListener("change", change);
+    return () => m.removeEventListener("change", change);
+  }, [query]);
+  return on;
+}
 
 let nextId = 1;
 const newId = () => `n${nextId++}`;
@@ -65,13 +78,19 @@ export default function App() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [download, setDownload] = useState<{ url: string; name: string } | null>(null);
-  const [exporting, setExporting] = useState<{ w: number; h: number } | null>(null);
+  // The export job: canvas size plus a frozen copy of the version being recorded.
+  const [exporting, setExporting] = useState<{ w: number; h: number; n: number; edits: Edit[] } | null>(null);
+  const exportJob = useRef<AbortController | null>(null);
+  const applyJob = useRef<AbortController | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [draft, setDraft] = useState<Edit | null>(null); // an edit being dragged on the video
   const [redo, setRedo] = useState<Undone[]>([]);
   const [saved, setSaved] = useState<SavedProject | null>(null); // a project from an earlier visit, offered on the landing page
   const [hasVideo, setHasVideo] = useState(false); // the open upload is stored in the browser too
+  const [fileInfo, setFileInfo] = useState<SavedProject["file"]>(undefined);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  const wide = useMedia(WIDE);
+  const [peeking, setPeeking] = useState(false); // showing the original while O is held
 
   useEffect(() => {
     void loadProject().then((p) => p && setSaved(p));
@@ -92,10 +111,11 @@ export default function App() {
   // While a zoom is selected and paused, show the frame unzoomed so its window can be aimed.
   const aimingZoom = selectedEdit?.kind === "zoom" && !ui.playing && !exporting;
   const viewEdits = useMemo(() => {
+    if (exporting) return exporting.edits; // nothing on screen can change what's being recorded
     let list = draft && isLatest ? shown.edits.map((e) => (e.id === draft.id ? draft : e)) : shown.edits;
     if (aimingZoom) list = list.filter((e) => e.id !== selected);
     return list;
-  }, [shown.edits, draft, isLatest, aimingZoom, selected]);
+  }, [exporting, shown.edits, draft, isLatest, aimingZoom, selected]);
 
   useEffect(() => {
     player?.setEdits(viewEdits);
@@ -109,7 +129,8 @@ export default function App() {
       setError(null);
       try {
         const src = await readSource(url, name, isSample);
-        if (restore && Math.abs(src.duration - restore.source.duration) > 0.5) throw new Error("That isn't the video from your saved project: its length is different.");
+        if (restore && (Math.abs(src.duration - restore.source.duration) > 0.5 || src.width !== restore.source.width || src.height !== restore.source.height))
+          throw new Error("That isn't the video from your saved project: its length or size is different.");
         player.pause();
         const decodes = mediaEvent(player.video, "loadeddata");
         player.video.preload = "auto";
@@ -152,11 +173,19 @@ export default function App() {
   const openFile = async (file: File, restore?: SavedProject) => {
     const problem = checkFile(file);
     if (problem) return setError(problem);
-    if (await open(URL.createObjectURL(file), restore?.source.name ?? file.name, false, restore)) setHasVideo(await saveVideo(file));
+    if (restore?.file && restore.file.size !== file.size)
+      return setError(`That isn't the file from your saved project. Choose “${restore.source.name}” (${(restore.file.size / 1e6).toFixed(1)} MB).`);
+    if (await open(URL.createObjectURL(file), restore?.source.name ?? file.name, false, restore)) {
+      setFileInfo({ size: file.size, lastModified: file.lastModified });
+      setHasVideo(await saveVideo(file));
+    }
   };
 
   const openSample = async () => {
-    if (await open(sampleUrl(), SAMPLE.name, true)) setHasVideo(await saveVideo(null));
+    if (await open(sampleUrl(), SAMPLE.name, true)) {
+      setFileInfo(undefined);
+      setHasVideo(await saveVideo(null));
+    }
   };
 
   // Pick up a saved project: the sample reloads by itself, an upload from browser storage if it fit there.
@@ -165,7 +194,10 @@ export default function App() {
     if (saved.source.isSample) return void open(sampleUrl(), saved.source.name, true, saved);
     const video = saved.hasFile ? await loadVideo() : undefined;
     if (!video) return setError(`Choose “${saved.source.name}” again to pick up where you left off.`);
-    if (await open(URL.createObjectURL(video), saved.source.name, false, saved)) setHasVideo(true);
+    if (await open(URL.createObjectURL(video), saved.source.name, false, saved)) {
+      setFileInfo(saved.file);
+      setHasVideo(true);
+    }
   };
 
   // Autosave: the project (not the undo history) shortly after anything changes.
@@ -173,13 +205,13 @@ export default function App() {
     if (!source) return;
     const timer = setTimeout(() => {
       const { name, duration, width, height, isSample } = source;
-      saveProject({ source: { name, duration, width, height, isSample }, versions, viewing, notes, savedAt: Date.now(), hasFile: hasVideo }).then(
+      saveProject({ source: { name, duration, width, height, isSample }, versions, viewing, notes, savedAt: Date.now(), hasFile: hasVideo, file: fileInfo }).then(
         () => setSavedAt(Date.now()),
         () => setSavedAt(null),
       );
     }, 600);
     return () => clearTimeout(timer);
-  }, [source, versions, viewing, notes, hasVideo]);
+  }, [source, versions, viewing, notes, hasVideo, fileInfo]);
 
   const togglePlay = useCallback(() => {
     if (!player || exporting) return;
@@ -268,6 +300,10 @@ export default function App() {
       setAgentLog([...log]);
     };
     let rounds = 0;
+    // Stop button and a deadline; notes keep waiting if a run is stopped.
+    const ctrl = new AbortController();
+    applyJob.current = ctrl;
+    const deadline = setTimeout(() => ctrl.abort("deadline"), APPLY_DEADLINE_MS);
     try {
       // The server takes up to 8 notes per run, so bigger sets go in batches,
       // each one building on the edits the last one made.
@@ -287,12 +323,13 @@ export default function App() {
         const transcript: unknown[] = [];
         let results: ApplyResult[] | null = null;
         while (!results) {
-          const res = await fetch("/api/apply", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...request, transcript }) });
+          const res = await fetch("/api/apply", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...request, transcript }), signal: ctrl.signal });
           const data = await res.json().catch(() => ({ error: "The server sent back something unreadable." }));
           if (!res.ok) throw new Error(data.error ?? `Apply failed (${res.status}).`);
           if (data.results) results = data.results as ApplyResult[];
           else {
             const toolResults = await Promise.all((data.calls as ToolCall[]).map((c) => runTool(footage, c, step)));
+            ctrl.signal.throwIfAborted();
             const ids = batch.map((n) => n.id).join(", ");
             const reminder = { type: "text", text: `When you have what you need, return one result for every note: ${ids}.` };
             transcript.push({ role: "assistant", content: data.content }, { role: "user", content: [...toolResults, reminder] });
@@ -310,19 +347,28 @@ export default function App() {
         }
       }
 
-      // Safety net: new overlays stay on only while what they cover is on screen.
-      const before = new Map(latest.edits.map((e) => [e.id, JSON.stringify(e)]));
-      const fresh = new Set(edits.filter((e) => before.get(e.id) !== JSON.stringify(e)).map((e) => e.id));
+      // Safety net: newly added overlays stay on only while what they cover looks
+      // unchanged. Changes to existing edits and timing the director asked for
+      // on purpose are left exactly as Claude set them.
+      const existing = new Set(latest.edits.map((e) => e.id));
+      const fresh = new Set(edits.filter((e) => !existing.has(e.id) && !e.exact).map((e) => e.id));
       const pinnedAt = new Map(pending.map((n) => [n.id, n.srcT]));
       const fit = await fitToFootage(footage, edits, fresh, (e) => (e.noteId ? pinnedAt.get(e.noteId) : undefined));
+      ctrl.signal.throwIfAborted();
       edits = fit.edits;
       for (const { before: b, after: a } of fit.fitted) {
         for (const c of changes) c.label = c.label.replace(describe(b), describe(a));
-        if ("start" in a && "start" in b && Math.abs(a.start - b.start) + Math.abs(a.end - b.end) > 0.3)
-          step({ kind: "fit", text: `Fitted the ${a.kind} to when it's on screen`, detail: `${formatTime(a.start)}–${formatTime(a.end)}` });
+        if (!("start" in a) || !("start" in b) || Math.abs(a.start - b.start) + Math.abs(a.end - b.end) <= 0.3) continue;
+        const range = `${formatTime(a.start)}–${formatTime(a.end)}`;
+        step({ kind: "fit", text: `Suggested range for the ${a.kind}: while the boxed area looks unchanged`, detail: `${range}, check it` });
+        // Say so on the note too, so its reply matches what was actually done.
+        const o = a.noteId ? outcome.get(a.noteId) : undefined;
+        if (o) o.reply = `${o.reply ?? ""} Yapifier set it to ${range}, while the boxed area looks unchanged. Moving content isn't followed, so check it.`.trim();
       }
       step({ kind: "done", text: `Done in ${((performance.now() - started) / 1000).toFixed(1)} s`, detail: rounds ? `checked the video ${rounds === 1 ? "once" : `${rounds} times`}` : undefined });
-      setNotes((all) => all.map((n) => (outcome.has(n.id) ? { ...n, ...outcome.get(n.id)! } : n.status === "pending" ? { ...n, status: "failed", reply: "No answer came back for this note." } : n)));
+      // Only the notes sent in this run; notes written while Yappy worked stay waiting.
+      const sent = new Set(pending.map((n) => n.id));
+      setNotes((all) => all.map((n) => (outcome.has(n.id) ? { ...n, ...outcome.get(n.id)! } : sent.has(n.id) ? { ...n, status: "failed", reply: "No answer came back for this note." } : n)));
       if (changes.length) {
         setRedo([]);
         const n = latest.n + 1;
@@ -336,10 +382,18 @@ export default function App() {
         player.play();
       }
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      setError(message);
-      step({ kind: "error", text: message });
+      if (ctrl.signal.aborted) {
+        const late = ctrl.signal.reason === "deadline";
+        step({ kind: "error", text: late ? "Stopped: this took over 2 minutes. Your notes are still waiting; try fewer at once." : "Stopped. Your notes are still waiting." });
+        if (late) setError("Yappy took too long. Try applying fewer notes at once.");
+      } else {
+        const message = e instanceof Error ? e.message : String(e);
+        setError(message);
+        step({ kind: "error", text: message });
+      }
     } finally {
+      clearTimeout(deadline);
+      applyJob.current = null;
       setBusy(null);
     }
   }, [player, source, footage, pending, busy, latest]);
@@ -397,8 +451,10 @@ export default function App() {
     (e: Edit | null) => {
       setSelected(e?.id ?? null);
       if (!e || !player) return;
+      const stage = document.querySelector(".stage");
+      if (!matchMedia(WIDE).matches && stage && stage.getBoundingClientRect().bottom < 80) stage.scrollIntoView({ block: "start", behavior: "smooth" });
       const hold = player.segs.find((s) => s.type === "hold" && s.edit.id === e.id);
-      if (hold) return seek(hold.out0);
+      if (hold) return seek(hold.out0 + Math.min(0.9, (hold.out1 - hold.out0) * 0.4));
       if (!("start" in e)) return seek(srcToOut(player.segs, e.at));
       if (isSpatial(e)) return seek(srcToOut(player.segs, e.start + Math.min(0.5, (e.end - e.start) / 2)));
       seek(Math.max(0, srcToOut(player.segs, e.start) - (e.kind === "cut" ? 1 : 0.2)));
@@ -428,7 +484,7 @@ export default function App() {
     if (!source) return;
     let next: Edit | undefined = e;
     if (Object.keys(fields).length) {
-      const op: Op = { op: "update", kind: e.kind, id: e.id, start: -1, end: -1, at: -1, duration: -1, x: -1, y: -1, w: -1, h: -1, scale: -1, rate: -1, level: -1, text: "", sub: "", ...fields };
+      const op: Op = { op: "update", kind: e.kind, id: e.id, start: -1, end: -1, at: -1, duration: -1, x: -1, y: -1, w: -1, h: -1, scale: -1, rate: -1, level: -1, text: "", sub: "", exact: fields.start !== undefined || fields.end !== undefined || fields.at !== undefined, ...fields };
       if (Object.values(fields).some((v) => typeof v === "number" && !Number.isFinite(v))) return setError("Enter a number of seconds, like 12.5.");
       const result = applyOps(latest.edits, [op], e.noteId ?? "", source.duration);
       if (result.rejected.length) return setError(`Couldn't change that: ${result.rejected[0].replace(/^\w+: /, "")}.`);
@@ -446,23 +502,53 @@ export default function App() {
     setDownload(null);
     setError(null);
     setPin(null);
-    setViewing(latest.n);
-    player.setEdits(latest.edits);
-    setExporting({ w, h });
+    const job = { w, h, n: latest.n, edits: latest.edits };
+    setViewing(job.n);
+    setSelected(null);
+    player.setEdits(job.edits);
+    setExporting(job);
+    setBusy("Exporting… 0%");
+    const ctrl = new AbortController();
+    exportJob.current = ctrl;
     await new Promise((r) => setTimeout(r, 50)); // let the export canvas mount
     try {
-      const { blob, ext } = await recordExport(player, exportRef.current!, (p) => setBusy(`Exporting… ${Math.round(p * 100)}%`));
+      const { blob, ext } = await recordExport(player, exportRef.current!, (p) => setBusy(`Exporting… ${Math.round(p * 100)}%`), ctrl.signal);
       const base = source.name.replace(/\.[^.]+$/, "").replace(/^Sample: /, "").replace(/\s*\(.*?\)/g, "").replace(/[^\w-]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase();
-      setDownload({ url: URL.createObjectURL(blob), name: `${base}-yapified-v${latest.n}.${ext}` });
+      setDownload({ url: URL.createObjectURL(blob), name: `${base}-yapified-v${job.n}.${ext}` });
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      if (!ctrl.signal.aborted) setError(e instanceof Error ? e.message : String(e));
     } finally {
+      exportJob.current = null;
       setExporting(null);
       setBusy(null);
     }
   };
 
-  // Keyboard: Space play/pause, N note at the centre, arrows seek, Cmd/Ctrl+Enter apply.
+  // Hold O (or the Original button) to see the untouched footage at this same moment.
+  const peek = useCallback(
+    (on: boolean) => {
+      if (!player || exporting || on === peeking) return;
+      const srcT = locate(player.segs, player.outT).srcT;
+      player.pause();
+      player.setEdits(on ? [] : viewEdits);
+      player.seek(on ? srcT : srcToOut(player.segs, srcT));
+      setPeeking(on);
+    },
+    [player, exporting, peeking, viewEdits],
+  );
+
+  useEffect(() => {
+    const release = (e: KeyboardEvent) => e.key.toLowerCase() === "o" && peek(false);
+    const lost = () => peek(false);
+    window.addEventListener("keyup", release);
+    window.addEventListener("blur", lost);
+    return () => {
+      window.removeEventListener("keyup", release);
+      window.removeEventListener("blur", lost);
+    };
+  }, [peek]);
+
+  // Keyboard: Space play/pause, N note at the centre, arrows seek, Cmd/Ctrl+Enter apply, hold O for the original.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!source || !player) return;
@@ -478,6 +564,7 @@ export default function App() {
         e.preventDefault();
         void apply();
       } else if (e.key.toLowerCase() === "n" && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
         const r = canvasRef.current?.getBoundingClientRect();
         if (r) point(0.5, 0.5, r.width / 2, r.height / 2, r.width, r.height);
       } else if ((e.metaKey || e.ctrlKey) && (e.key.toLowerCase() === "y" || (e.key.toLowerCase() === "z" && e.shiftKey))) {
@@ -489,6 +576,9 @@ export default function App() {
       } else if ((e.key === "Delete" || e.key === "Backspace") && selected && isLatest) {
         e.preventDefault();
         removeEdit(selected);
+      } else if (e.key.toLowerCase() === "o" && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        if (!e.repeat) peek(true);
       } else if (e.key === "Escape") {
         setPin(null);
         setSelected(null);
@@ -496,10 +586,27 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [source, player, togglePlay, seek, apply, point, undo, redoLast, removeEdit, selected, isLatest]);
+  }, [source, player, togglePlay, seek, apply, point, undo, redoLast, removeEdit, selected, isLatest, peek]);
 
 
   (window as unknown as { __yap: unknown }).__yap = { player, versions, notes, source, footage };
+
+  // On wide screens, scroll the side panel to the inspector when an edit is picked (the video stays put).
+  useEffect(() => {
+    if (selected && wide) requestAnimationFrame(() => document.querySelector(".side .inspector")?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+  }, [selected, wide]);
+
+  const inspector = selectedEdit && (
+    <Inspector
+      key={selectedEdit.id}
+      edit={selectedEdit}
+      srcT={ui.srcT}
+      inView={!("start" in selectedEdit) || (ui.srcT >= selectedEdit.start - 0.05 && ui.srcT <= selectedEdit.end + 0.05)}
+      onAdjust={(a) => adjust(selectedEdit, a)}
+      onJump={() => pick(selectedEdit)}
+      onClose={() => setSelected(null)}
+    />
+  );
 
   const length = player?.length ?? 0;
   const [theme, toggleTheme] = useTheme();
@@ -546,9 +653,15 @@ export default function App() {
                 <b>4</b> Apply
               </li>
             </ol>
-            <button className="secondary small" disabled={!!busy || !fmt} onClick={doExport} title={fmt ? `Exports ${fmt.ext.toUpperCase()} with sound` : "Export needs Chrome or Edge"}>
-              {busy?.startsWith("Exporting") ? busy : `Export v${latest.n === 1 ? "" : latest.n}`.replace(/ v$/, "")}
-            </button>
+            {exporting ? (
+              <button className="secondary small" onClick={() => exportJob.current?.abort()} title="Stop recording; nothing is saved">
+                Stop export · {busy?.replace(/^Exporting… /, "")}
+              </button>
+            ) : (
+              <button className="secondary small" disabled={!!busy || !fmt} onClick={() => void doExport()} title={fmt ? `Exports ${fmt.ext.toUpperCase()} with sound` : "Export needs Chrome or Edge"}>
+                {`Export v${latest.n === 1 ? "" : latest.n}`.replace(/ v$/, "")}
+              </button>
+            )}
           </>
         )}
         {!source && <div className="spacer" />}
@@ -604,7 +717,7 @@ export default function App() {
                   />
                 </>
               )}
-              {selectedEdit && isSpatial(selectedEdit) && !ui.playing && !exporting && "start" in selectedEdit && ui.srcT >= selectedEdit.start - 0.05 && ui.srcT <= selectedEdit.end + 0.05 && (
+              {selectedEdit && isSpatial(selectedEdit) && !ui.playing && !exporting && !peeking && "start" in selectedEdit && ui.srcT >= selectedEdit.start - 0.05 && ui.srcT <= selectedEdit.end + 0.05 && (
                 <EditHandles
                   edit={selectedEdit}
                   viewEdits={viewEdits}
@@ -616,11 +729,22 @@ export default function App() {
                   }}
                 />
               )}
+              {peeking && <div className="stage-banner">Original footage · let go to see your edit</div>}
               {exporting && <div className="stage-banner">Recording your edit in real time, with sound. Keep this tab open.</div>}
             </Stage>
             <div className="transport">
               <button className="play" onClick={togglePlay} aria-label={ui.playing ? "Pause" : "Play"} disabled={!!exporting}>
                 {ui.playing ? "❚❚" : "▶"}
+              </button>
+              <button
+                className="secondary small peek"
+                onPointerDown={() => peek(true)}
+                onPointerUp={() => peek(false)}
+                onPointerLeave={() => peek(false)}
+                disabled={!!exporting || latest.edits.length === 0}
+                title="Hold to see the original footage at this moment (or hold O)"
+              >
+                ◐ Hold for original
               </button>
               <span className="clock">
                 {formatTime(ui.outT)} <span className="muted">/ {formatTime(length)}</span>
@@ -641,7 +765,7 @@ export default function App() {
                 <kbd>Space</kbd> play · <kbd>N</kbd> note · <kbd>←</kbd>
                 <kbd>→</kbd> seek · <kbd>⌘</kbd>
                 <kbd>↵</kbd> apply · <kbd>⌘</kbd>
-                <kbd>Z</kbd> undo
+                <kbd>Z</kbd> undo · hold <kbd>O</kbd> original
               </span>
             </div>
             <Timeline
@@ -658,6 +782,7 @@ export default function App() {
               onPick={pick}
               theme={theme}
             />
+            {!wide && inspector}
           </section>
 
           <aside className="side">
@@ -668,6 +793,7 @@ export default function App() {
               {notes.length ? (
                 <NotesPanel
                   notes={notes}
+                  edits={latest.edits}
                   onJump={(n) => seek(srcToOut(player.segs, n.srcT))}
                   onDelete={(id) => setNotes((all) => all.filter((n) => n.id !== id))}
                   onAnswer={(id, text, spoken) =>
@@ -690,9 +816,15 @@ export default function App() {
               {pending.length > 0 && !busy && (
                 <p className="sends muted small">Apply sends Yappy (powered by Claude) your note text, the frames you paused on, and any frames it checks. The video file stays in your browser.</p>
               )}
-              <button className="primary" disabled={!pending.length || !!busy} onClick={() => void apply()}>
-                {busy?.startsWith("Applying") ? "Yappy is working…" : pending.length ? `Apply ${pending.length} note${pending.length > 1 ? "s" : ""}` : "Apply notes"}
-              </button>
+              {busy?.startsWith("Applying") ? (
+                <button className="secondary" onClick={() => applyJob.current?.abort()}>
+                  Stop Yappy
+                </button>
+              ) : (
+                <button className="primary" disabled={!pending.length || !!busy} onClick={() => void apply()}>
+                  {pending.length ? `Apply ${pending.length} note${pending.length > 1 ? "s" : ""}` : "Apply notes"}
+                </button>
+              )}
               {error && <p className="error">{error}</p>}
               {download && (
                 <a className="download" href={download.url} download={download.name}>
@@ -717,23 +849,13 @@ export default function App() {
               ) : (
                 <p className="muted small edits-empty">{isLatest ? "No edits yet. Apply a note and each edit shows up here, with × to remove it." : "No edits in this version."}</p>
               )}
-              {selectedEdit && (
-                <Inspector
-                  key={selectedEdit.id}
-                  edit={selectedEdit}
-                  srcT={ui.srcT}
-                  inView={!("start" in selectedEdit) || (ui.srcT >= selectedEdit.start - 0.05 && ui.srcT <= selectedEdit.end + 0.05)}
-                  onAdjust={(a) => adjust(selectedEdit, a)}
-                  onJump={() => pick(selectedEdit)}
-                  onClose={() => setSelected(null)}
-                />
-              )}
+              {wide && inspector}
               {!isLatest && (
                 <button className="primary restore" onClick={() => restore(shown.n)} disabled={!!busy}>
                   Restore {shown.n === 1 ? "the original" : `v${shown.n}`}
                 </button>
               )}
-              <VersionsPanel versions={versions} viewing={shown.n} onView={setViewing} />
+              <VersionsPanel versions={versions} viewing={shown.n} onView={setViewing} locked={!!exporting} />
             </div>
           </aside>
         </main>

@@ -8,6 +8,7 @@ export const EDIT_KINDS: EditKind[] = ["cut", "speed", "zoom", "callout", "highl
 interface Base {
   id: string;
   noteId?: string; // the note that asked for it
+  exact?: boolean; // the director set this timing on purpose: never fitted to the footage
 }
 
 export interface Cut extends Base { kind: "cut"; start: number; end: number }

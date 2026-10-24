@@ -96,7 +96,7 @@ export default function Landing({ onFile, onSample, saved, onResume, onResumeFil
           <button className="secondary big" onClick={() => input.current?.click()} disabled={loading}>
             Upload your own video
           </button>
-          <p className="drop-hint">Drop an MP4 or WebM here · up to {MAX_UPLOAD_MB} MB, 5 minutes · the file stays in your browser; only the frames you point at and your notes go to Claude</p>
+          <p className="drop-hint">Drop an MP4 or WebM here · up to {MAX_UPLOAD_MB} MB, 5 minutes · the file stays in your browser; Yappy (Claude) only gets your notes, the frames you point at and the frames it checks</p>
           <input
             ref={input}
             type="file"
@@ -124,7 +124,7 @@ export default function Landing({ onFile, onSample, saved, onResume, onResumeFil
         ))}
       </ol>
       <p className="footnote">
-        Built for the WeMakeDevs × Wispr Flow “No Hands” challenge; not an official Wispr Flow product. Works best in Chrome with{" "}
+        Built for the WeMakeDevs × Wispr Flow “No Hands” challenge; not an official Wispr Flow product · build {__BUILD__}. Works best in Chrome with{" "}
         <a href="https://wisprflow.ai" target="_blank" rel="noreferrer">Wispr Flow</a>; typing works too.
       </p>
     </main>

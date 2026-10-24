@@ -33,6 +33,8 @@ export default defineConfig(({ mode }) => {
   // Make .env.local visible to the server-side handler during dev.
   Object.assign(process.env, loadEnv(mode, process.cwd(), ""));
   return {
+    // Short commit id on the page, so anyone can tell which build is live.
+    define: { __BUILD__: JSON.stringify((process.env.VERCEL_GIT_COMMIT_SHA ?? "local").slice(0, 7)) },
     plugins: [react(), localApi()],
     // node_modules is a link to node_modules.nosync (kept out of iCloud Desktop sync);
     // keep the link's path so Vite still treats packages as dependencies.

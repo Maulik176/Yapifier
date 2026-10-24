@@ -45,11 +45,13 @@ const STATUS: Record<Note["status"], string> = { pending: "waiting", applied: "a
 
 export function NotesPanel({
   notes,
+  edits,
   onJump,
   onDelete,
   onAnswer,
 }: {
   notes: Note[];
+  edits: Edit[]; // the latest version's edits, so each note shows what it really produced
   onJump: (n: Note) => void;
   onDelete: (id: string) => void;
   onAnswer: (id: string, text: string, spoken: boolean) => void;
@@ -73,6 +75,15 @@ export function NotesPanel({
             </div>
             <p className="note-text">“{n.text}”</p>
             {n.reply && <p className={n.status === "question" ? "note-reply question" : "note-reply"}>{n.reply}</p>}
+            {n.status !== "pending" && edits.some((e) => e.noteId === n.id) && (
+              <ul className="note-result" aria-label="Edits this note made">
+                {edits
+                  .filter((e) => e.noteId === n.id)
+                  .map((e) => (
+                    <li key={e.id}>{describe(e)}</li>
+                  ))}
+              </ul>
+            )}
             {n.answer && n.status === "pending" && <p className="note-answer">Your answer{n.answerSpoken ? " (Flow or paste)" : ""}: “{n.answer}”</p>}
             {n.status === "question" && <AnswerBox onAnswer={(text, spoken) => onAnswer(n.id, text, spoken)} />}
           </div>
@@ -87,12 +98,13 @@ export function NotesPanel({
   );
 }
 
-export function VersionsPanel({ versions, viewing, onView }: { versions: Version[]; viewing: number; onView: (n: number) => void }) {
+// locked: an export is recording one version, so switching is off until it ends.
+export function VersionsPanel({ versions, viewing, onView, locked }: { versions: Version[]; viewing: number; onView: (n: number) => void; locked: boolean }) {
   return (
     <div className="versions">
       <div className="version-chips" role="tablist" aria-label="Versions">
         {versions.map((v) => (
-          <button key={v.n} role="tab" aria-selected={viewing === v.n} className={viewing === v.n ? "vchip active" : "vchip"} onClick={() => onView(v.n)}>
+          <button key={v.n} role="tab" aria-selected={viewing === v.n} className={viewing === v.n ? "vchip active" : "vchip"} disabled={locked && viewing !== v.n} onClick={() => onView(v.n)}>
             {v.n === 1 ? "Original" : `v${v.n}`}
           </button>
         ))}

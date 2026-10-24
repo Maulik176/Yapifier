@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<!-- README banner. Render: see docs/media/src/render.sh -->
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;1,400&family=Figtree:wght@500;600;700&display=block" rel="stylesheet" />
+<style>
+  html, body { margin: 0; }
+  body { width: 1600px; height: 600px; background: #ffffeb; font-family: Figtree, sans-serif; color: #1a1a1a; overflow: hidden; }
+  .frame { position: absolute; inset: 24px; border: 3px solid #1a1a1a; border-radius: 56px; overflow: hidden; }
+  .left { position: absolute; left: 72px; top: 70px; width: 640px; }
+  .brand { display: flex; align-items: center; gap: 22px; }
+  .brand img { width: 92px; height: 92px; }
+  .brand span { font: 400 104px/1 "EB Garamond", serif; letter-spacing: -0.02em; }
+  h1 { font: 400 62px/1.02 "EB Garamond", serif; margin: 34px 0 18px; letter-spacing: -0.01em; }
+  h1 em { color: #034f46; }
+  p { font-size: 25px; line-height: 1.42; margin: 0; color: #4a4839; font-weight: 500; }
+  .chips { display: flex; gap: 12px; margin-top: 30px; }
+  .chip { padding: 9px 18px; border-radius: 999px; border: 2px solid #1a1a1a; font-weight: 700; font-size: 19px; }
+  .chip.lav { background: #f0d7ff; }
+  .chip.teal { background: #034f46; color: #ffffeb; border-color: #034f46; }
+  .shot { position: absolute; right: -40px; top: 64px; width: 820px; border: 3px solid #1a1a1a; border-radius: 28px; overflow: hidden; box-shadow: 0 30px 60px -30px #0006; }
+  .shot img { display: block; width: 100%; }
+  .bubble { position: absolute; right: 520px; top: 420px; max-width: 360px; padding: 16px 22px; background: #fffff7; border: 3px solid #1a1a1a; border-radius: 26px; font: 400 27px/1.25 "EB Garamond", serif; box-shadow: 0 16px 30px -18px #0007; }
+  .bubble small { display: block; font: 700 15px Figtree, sans-serif; color: #034f46; margin-bottom: 4px; letter-spacing: 0.06em; text-transform: uppercase; }
+  .yappy { position: absolute; right: 64px; top: 470px; padding: 12px 18px; background: #ffa946; border: 3px solid #1a1a1a; border-radius: 22px; font-size: 19px; font-weight: 700; display: flex; gap: 10px; align-items: center; }
+  .yappy img { width: 30px; height: 30px; border-radius: 7px; }
+</style>
+</head>
+<body>
+  <div class="frame">
+    <div class="left">
+      <div class="brand"><img src="icon.svg" alt="" /><span>Yapifier</span></div>
+      <h1>See it. Point at it. <em>Say it.</em></h1>
+      <p>A video editor you talk to. Pause, click the spot, say the fix with Wispr Flow, and Yappy edits your screen recording.</p>
+      <div class="chips"><span class="chip lav">Wispr Flow</span><span class="chip teal">Claude Opus 5.5</span><span class="chip">No sign-up</span></div>
+    </div>
+    <div class="shot"><img src="../editor-applied.png" alt="" /></div>
+    <div class="bubble"><small>Said with Wispr Flow</small>“Blur this email address, I don't want it in the final video.”</div>
+    <div class="yappy"><img src="icon.svg" alt="" />Yappy · email on screen 30.8–32.3 s</div>
+  </div>
+</body>
+</html>

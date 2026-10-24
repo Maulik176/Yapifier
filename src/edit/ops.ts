@@ -21,6 +21,7 @@ export interface Op {
   level: number;
   text: string;
   sub: string;
+  exact: boolean; // timing asked for explicitly; keep it as given
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -150,6 +151,7 @@ export function applyOps(edits: Edit[], ops: Op[], noteId: string, duration: num
       continue;
     }
     shaped.noteId = noteId;
+    if (op.exact || prev?.exact) shaped.exact = true;
     const candidate = prev ? next.map((e) => (e.id === prev.id ? shaped : e)) : [...next, shaped];
     // Cuts and speed-ups must leave something to watch.
     if (outDuration(buildTimeline(candidate, duration)) < MIN_LEFT) {

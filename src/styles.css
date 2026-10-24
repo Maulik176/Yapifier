@@ -280,3 +280,13 @@ summary.agent-head { cursor: pointer; }
 .resume .primary { background: var(--ink); color: var(--cream); border-color: var(--ink); }
 .resume .primary:not(:disabled):hover { background: #333; }
 .resume .link { color: var(--ink); }
+.note-result { list-style: none; margin: 5px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: 12px; font-weight: 600; }
+.note-result li::before { content: "→ "; color: var(--muted); }
+
+/* Two columns: the side panel scrolls on its own, so the video stays in view while editing */
+@media (min-width: 1021px) {
+  .editor { align-items: start; }
+  .side { position: sticky; top: 76px; max-height: calc(100vh - 92px); overflow-y: auto; overscroll-behavior: contain; padding-right: 2px; }
+}
+.peek { user-select: none; touch-action: none; }
+.peek:active { background: var(--text); color: var(--bg); }

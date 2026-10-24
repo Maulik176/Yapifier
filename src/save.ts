@@ -11,6 +11,7 @@ export interface SavedProject {
   notes: Note[];
   savedAt: number;
   hasFile: boolean; // the uploaded video is stored alongside
+  file?: { size: number; lastModified: number }; // to recognise the same upload when it's picked again
 }
 
 const STORE = "project";
