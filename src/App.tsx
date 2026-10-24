@@ -158,10 +158,8 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <div className="brand">
-          <span className="logo-mark" aria-hidden>
-            ●
-          </span>
-          Director's Chair
+          <img className="logo-mark" src="/icon.svg" alt="" width={28} height={28} />
+          Yapifier
         </div>
         <ol className="steps" aria-label="How it works">
           <li>

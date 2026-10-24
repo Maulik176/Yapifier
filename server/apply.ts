@@ -66,7 +66,7 @@ const RESULT_SCHEMA = {
   },
 };
 
-const SYSTEM = `You are the editor inside Director's Chair, a motion-graphics tool. A director watched the film, paused, pointed at a spot and spoke a note (dictated with Wispr Flow, sometimes in Hinglish). For each note, return the smallest set of field edits that does what the director asked.
+const SYSTEM = `You are the editor inside Yapifier, a motion-graphics tool. A director watched the film, paused, pointed at a spot and spoke a note (dictated with Wispr Flow, sometimes in Hinglish). For each note, return the smallest set of field edits that does what the director asked.
 
 The film is JSON: scenes play in order; each element has a centre (x, y), a size (w, h) and an entrance (enter.preset, enter.at in seconds from scene start, enter.spring).
 
