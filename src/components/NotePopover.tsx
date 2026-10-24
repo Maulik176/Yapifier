@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { formatTime } from "../engine/timing";
+import { formatTime } from "../edit/timeline";
 
 interface Props {
   px: number;
@@ -46,6 +46,7 @@ export default function NotePopover({ px, py, stageW, stageH, t, targetName, onS
           if (type === "insertFromPaste") setPasted(true);
         }}
         onKeyDown={(e) => {
+          e.stopPropagation(); // keep editor shortcuts (Space, N) out of the note box
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
             if (text.trim()) onSave(text.trim(), spoken);

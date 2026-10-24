@@ -4,3 +4,4 @@ node_modules.nosync
 .env
 .env.*
 .claude
+sample-video

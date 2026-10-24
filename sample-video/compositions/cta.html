@@ -1,0 +1,133 @@
+<template>
+  <style>
+    #root {
+      position: absolute;
+      inset: 0;
+      background: #ffd23f;
+      overflow: hidden;
+      color: #14101f;
+      font-family: Inter, sans-serif;
+    }
+    #cta-say {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 200px;
+      text-align: center;
+      font-family: "Archivo Black", sans-serif; font-weight: 400; font-size: 84px; line-height: 1;
+      letter-spacing: -0.02em;
+    }
+    #cta-say .w {
+      display: inline-block;
+      margin: 0 0.12em;
+      opacity: 0;
+    }
+    #cta-key {
+      position: absolute;
+      left: 410px;
+      top: 430px;
+      width: 1100px;
+      height: 210px;
+    }
+    #cta-key-cap {
+      width: 1100px;
+      height: 210px;
+      border-radius: 44px;
+      background: #14101f;
+      box-shadow: 0 14px 0 #000000, 0 26px 44px rgba(20, 16, 31, 0.25);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
+    }
+    #cta-key-cap small {
+      font-family: Inter, sans-serif; font-weight: 600; font-size: 36px;
+      color: #ffd23f;
+    }
+    #cta-key-cap span {
+      font-family: "Archivo Black", sans-serif; font-weight: 400; font-size: 78px;
+      letter-spacing: -0.01em;
+    }
+    #cta-contact {
+      position: absolute;
+      left: 184px;
+      top: 900px;
+      font-family: Inter, sans-serif; font-weight: 600; font-size: 30px;
+    }
+    #cta-end {
+      position: absolute;
+      inset: 0;
+    }
+    #cta-mark {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 300px;
+      text-align: center;
+      white-space: nowrap;
+    }
+    .cta-cap {
+      display: inline-grid;
+      place-items: center;
+      width: 150px;
+      height: 150px;
+      margin: 0 9px;
+      border-radius: 30px;
+      background: #f6f3ec;
+      box-shadow: 0 12px 0 #cfc8ba, 0 22px 36px rgba(20, 16, 31, 0.18);
+      font-family: "Archivo Black", sans-serif; font-weight: 400; font-size: 96px;
+    }
+    .cta-gap {
+      display: inline-block;
+      width: 60px;
+    }
+    #cta-sub {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 520px;
+      text-align: center;
+      font-family: Inter, sans-serif; font-weight: 700; font-size: 50px;
+    }
+    #cta-disclaimer {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 860px;
+      text-align: center;
+      font-family: Inter, sans-serif; font-weight: 600; font-size: 30px;
+      color: rgba(20, 16, 31, 0.78);
+    }
+  </style>
+  <div data-hf-id="hf-8p5n" id="root" data-composition-id="cta" data-width="1920" data-height="1080">
+    <div data-hf-id="hf-qdeq" id="cta-main" class="clip" data-start="0" data-duration="3.05">
+      <div data-hf-id="hf-k8sn" id="cta-say"><span data-hf-id="hf-civn" class="w">Your</span><span data-hf-id="hf-bfia" class="w">voice</span><span data-hf-id="hf-fj2o" class="w">is</span><span data-hf-id="hf-9o0j" class="w">the</span><span data-hf-id="hf-g58x" class="w">keyboard.</span></div>
+      <div data-hf-id="hf-gl3v" id="cta-key"><div data-hf-id="hf-su2s" id="cta-key-cap"><small data-hf-id="hf-3bz5">Register by 30 October</small><span data-hf-id="hf-5p0v">wemakedevs.org/wispr</span></div></div>
+      <div data-hf-id="hf-hgjo" id="cta-contact">Questions? team@example.com</div>
+    </div>
+    <div data-hf-id="hf-ve64" id="cta-end" class="clip" data-start="2.95" data-duration="3.65">
+      <div data-hf-id="hf-yiy1" id="cta-mark"><span data-hf-id="hf-iqco" class="cta-cap">N</span><span data-hf-id="hf-ic1n" class="cta-cap">O</span><span data-hf-id="hf-s9mi" class="cta-gap"></span><span data-hf-id="hf-gcii" class="cta-cap">H</span><span data-hf-id="hf-j4np" class="cta-cap">A</span><span data-hf-id="hf-3274" class="cta-cap">N</span><span data-hf-id="hf-l46u" class="cta-cap">D</span><span data-hf-id="hf-qa67" class="cta-cap">S</span></div>
+      <div data-hf-id="hf-sqrz" id="cta-sub">The Wispr Flow challenge · 16–30 October 2026</div>
+      <div data-hf-id="hf-3lbd" id="cta-disclaimer">Sample video made for Yapifier. Not an official WeMakeDevs or Wispr Flow video.</div>
+    </div>
+  </div>
+  <script>
+    (function () {
+      const tl = gsap.timeline({ paused: true });
+      tl.fromTo("#cta-say .w", { opacity: 0, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.14, ease: "power4.out", stagger: 0.12 }, 0.6);
+      tl.fromTo("#cta-key", { y: 500 }, { y: 0, duration: 0.6, ease: "expo.out" }, 0.1);
+      // The button is pressed.
+      tl.fromTo("#cta-key-cap", { y: 0, boxShadow: "0 14px 0 #000000, 0 26px 44px rgba(20,16,31,0.25)" }, { y: 12, boxShadow: "0 2px 0 #000000, 0 8px 16px rgba(20,16,31,0.2)", duration: 0.07, ease: "power2.out" }, 1.03)
+        .to("#cta-key-cap", { y: 0, boxShadow: "0 14px 0 #000000, 0 26px 44px rgba(20,16,31,0.25)", duration: 0.2, ease: "power2.out" }, 1.12);
+      tl.fromTo("#cta-contact", { opacity: 0 }, { opacity: 1, duration: 0.3, ease: "power2.out" }, 1.4);
+      tl.to(["#cta-say", "#cta-key", "#cta-contact"], { y: -900, duration: 0.3, ease: "power3.in", stagger: 0.03 }, 2.75);
+
+      // End card: the name is carried in key by key, then the line and the disclaimer.
+      tl.fromTo(".cta-cap", { y: -700, rotation: (i) => (i % 2 ? 9 : -9) }, { y: 0, rotation: 0, duration: 0.5, ease: "back.out(1.4)", stagger: 0.06 }, 3.0);
+      tl.fromTo("#cta-sub", { opacity: 0, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.2, ease: "power4.out" }, 3.55);
+      tl.fromTo("#cta-disclaimer", { opacity: 0 }, { opacity: 1, duration: 0.3, ease: "power2.out" }, 3.25);
+      window.__timelines["cta"] = tl;
+    })();
+  </script>
+</template>

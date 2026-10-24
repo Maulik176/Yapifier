@@ -1,0 +1,74 @@
+<template>
+  <style>
+    #root {
+      position: absolute;
+      inset: 0;
+      background: #ffd23f;
+      overflow: hidden;
+      color: #14101f;
+    }
+    #prize-label {
+      position: absolute;
+      left: 184px;
+      top: 230px;
+      font-family: Inter, sans-serif; font-weight: 600; font-size: 52px;
+    }
+    #prize-amount {
+      position: absolute;
+      left: 170px;
+      top: 300px;
+      font-family: "Archivo Black", sans-serif; font-weight: 400; font-size: 260px; line-height: 1;
+      letter-spacing: -0.03em;
+      font-variant-numeric: tabular-nums;
+    }
+    #prize-winners {
+      position: absolute;
+      left: 184px;
+      top: 640px;
+      font-family: Inter, sans-serif; font-weight: 800; font-size: 88px;
+      letter-spacing: -0.02em;
+    }
+    #prize-winners b {
+      color: #7c5cff;
+    }
+    #prize-who {
+      position: absolute;
+      left: 186px;
+      top: 780px;
+      font-family: Inter, sans-serif; font-weight: 600; font-size: 40px;
+    }
+  </style>
+  <div data-hf-id="hf-wthl" id="root" data-composition-id="prize" data-width="1920" data-height="1080">
+    <div data-hf-id="hf-nb4n" id="prize-label">In cash, for each winner</div>
+    <div data-hf-id="hf-giut" id="prize-amount">₹0</div>
+    <div data-hf-id="hf-7g03" id="prize-winners">× <b data-hf-id="hf-sc0y">3</b> winners</div>
+    <div data-hf-id="hf-qohy" id="prize-who">Builders · No-Code · Most Wispr usage</div>
+  </div>
+  <script>
+    (function () {
+      const amount = document.querySelector("#prize-amount");
+      const counter = { v: 0 };
+      const tl = gsap.timeline({ paused: true });
+      tl.fromTo("#prize-label", { opacity: 0, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.18, ease: "power4.out" }, 0.1);
+      tl.fromTo("#prize-amount", { y: 120, opacity: 0 }, { y: 0, opacity: 1, duration: 0.5, ease: "expo.out" }, 0.15);
+      // The number is earned: it counts up and lands on the real prize.
+      tl.fromTo(
+        counter,
+        { v: 0 },
+        {
+          v: 100000,
+          duration: 1.05,
+          ease: "expo.out",
+          onUpdate: () => {
+            amount.textContent = "₹" + Math.round(counter.v / 1000 * 1000).toLocaleString("en-IN");
+          },
+        },
+        0.25,
+      );
+      tl.fromTo("#prize-winners", { opacity: 0, scale: 0.6, transformOrigin: "0% 50%" }, { opacity: 1, scale: 1, duration: 0.45, ease: "back.out(1.6)" }, 1.3);
+      tl.fromTo("#prize-who", { opacity: 0, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.2, ease: "power4.out" }, 1.55);
+      tl.to(["#prize-label", "#prize-amount", "#prize-winners", "#prize-who"], { y: -900, duration: 0.3, ease: "power3.in", stagger: 0.03 }, 3.45);
+      window.__timelines["prize"] = tl;
+    })();
+  </script>
+</template>

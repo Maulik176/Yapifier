@@ -9,3 +9,7 @@ dist/
 .vercel
 .claude/
 .env*
+sample-video/renders
+sample-video/.hyperframes
+sample-video/.thumbnails
+sample-video/.waveform-cache

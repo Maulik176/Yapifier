@@ -1,0 +1,136 @@
+<template>
+  <style>
+    #root {
+      position: absolute;
+      inset: 0;
+      background: #ffd23f;
+      overflow: hidden;
+      font-family: Inter, sans-serif;
+      color: #14101f;
+    }
+    #typing-cursor {
+      position: absolute;
+      left: 265px;
+      top: 330px;
+      width: 6px;
+      height: 64px;
+      background: #14101f;
+      border-radius: 3px;
+    }
+    #typing-prompt {
+      position: absolute;
+      left: 265px;
+      top: 300px;
+      width: 1390px;
+      font-family: Inter, sans-serif; font-weight: 600; font-size: 54px; line-height: 1.25;
+      letter-spacing: -0.01em;
+    }
+    #typing-prompt .ch {
+      opacity: 0;
+    }
+    .typing-wall {
+      position: absolute;
+      left: 265px;
+      width: 1390px;
+      font-family: Inter, sans-serif; font-weight: 600; font-size: 54px; line-height: 1.25;
+      letter-spacing: -0.01em;
+      opacity: 0;
+    }
+    #typing-row {
+      position: absolute;
+      left: 265px;
+      top: 760px;
+      width: 1390px;
+      height: 150px;
+    }
+    .key {
+      position: absolute;
+      top: 0;
+      width: 110px;
+      height: 110px;
+      border-radius: 22px;
+      background: #f6f3ec;
+      box-shadow: 0 10px 0 #cfc8ba, 0 18px 30px rgba(20, 16, 31, 0.18);
+      display: grid;
+      place-items: center;
+      font-family: Inter, sans-serif; font-weight: 700; font-size: 40px;
+      color: #14101f;
+    }
+    #typing-fn {
+      background: #7c5cff;
+      color: #ffffff;
+      box-shadow: 0 10px 0 #5a3ed6, 0 18px 30px rgba(20, 16, 31, 0.22);
+    }
+  </style>
+  <div data-hf-id="hf-ztns" id="root" data-composition-id="typing" data-width="1920" data-height="1080">
+    <div data-hf-id="hf-rss3" id="typing-cursor" class="clip" data-start="0" data-duration="2.25"></div>
+    <div data-hf-id="hf-32e6" id="typing-prompt">Write the release notes for v2.4, update the docs, reply to the team…</div>
+    <div data-hf-id="hf-hd9n" id="typing-wall1" class="typing-wall" style="top: 440px">Summarise yesterday's stand-up in Slack, then draft</div>
+    <div data-hf-id="hf-enli" id="typing-wall2" class="typing-wall" style="top: 508px">the client email, the PR description, the Jira ticket,</div>
+    <div data-hf-id="hf-bm9k" id="typing-wall3" class="typing-wall" style="top: 576px">the onboarding doc, the follow-up, the follow-up…</div>
+    <div data-hf-id="hf-ep7z" id="typing-row">
+      <div data-hf-id="hf-6t2w" id="typing-fn" class="key" style="left: 0px">Fn</div>
+      <div data-hf-id="hf-jscq" class="key typing-letter" style="left: 128px">Q</div>
+      <div data-hf-id="hf-8n44" class="key typing-letter" style="left: 256px">W</div>
+      <div data-hf-id="hf-ex7m" class="key typing-letter" style="left: 384px">E</div>
+      <div data-hf-id="hf-szze" class="key typing-letter" style="left: 512px">R</div>
+      <div data-hf-id="hf-tlny" class="key typing-letter" style="left: 640px">T</div>
+      <div data-hf-id="hf-gjus" class="key typing-letter" style="left: 768px">Y</div>
+      <div data-hf-id="hf-rwlo" class="key typing-letter" style="left: 896px">U</div>
+      <div data-hf-id="hf-adyw" class="key typing-letter" style="left: 1024px">I</div>
+      <div data-hf-id="hf-xz40" class="key typing-letter" style="left: 1152px">O</div>
+      <div data-hf-id="hf-dj4v" class="key typing-letter" style="left: 1280px">P</div>
+    </div>
+  </div>
+  <script>
+    (function () {
+      // Split the prompt into per-character spans once, deterministically.
+      const prompt = document.querySelector("#typing-prompt");
+      const text = prompt.textContent;
+      prompt.textContent = "";
+      for (const c of text) {
+        const s = document.createElement("span");
+        s.className = "ch";
+        s.textContent = c;
+        prompt.appendChild(s);
+      }
+      const chars = prompt.querySelectorAll(".ch");
+      const keys = document.querySelectorAll(".typing-letter");
+      const tl = gsap.timeline({ paused: true });
+
+      // 0–2.25 s: a lone cursor blinks twice (the planted slow start).
+      tl.set("#typing-cursor", { opacity: 1 }, 0)
+        .set("#typing-cursor", { opacity: 0 }, 0.55)
+        .set("#typing-cursor", { opacity: 1 }, 1.1)
+        .set("#typing-cursor", { opacity: 0 }, 1.65)
+        .set("#typing-cursor", { opacity: 1 }, 2.0);
+
+      // Keys arrive as one row.
+      tl.fromTo("#typing-row .key", { y: 220, opacity: 0 }, { y: 0, opacity: 1, duration: 0.5, ease: "expo.out", stagger: 0.025 }, 1.6);
+
+      // 2.4–6.2 s: typing, one character at a time, each pressing a key.
+      const t0 = 2.4;
+      const step = 3.7 / chars.length;
+      chars.forEach((ch, i) => {
+        const at = t0 + i * step;
+        tl.set(ch, { opacity: 1 }, at);
+        if (ch.textContent.trim()) {
+          const k = keys[(ch.textContent.toLowerCase().charCodeAt(0) * 7) % keys.length];
+          tl.fromTo(k, { y: 0 }, { y: 9, duration: 0.05, ease: "power2.out" }, at).to(k, { y: 0, duration: 0.12, ease: "power2.out" }, at + 0.05);
+        }
+      });
+
+      // 6.4–8.4 s: it piles up into a wall.
+      ["#typing-wall1", "#typing-wall2", "#typing-wall3"].forEach((id, i) => {
+        tl.fromTo(id, { opacity: 0, filter: "blur(8px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.18, ease: "power4.out" }, 6.45 + i * 0.32);
+      });
+      tl.to(["#typing-prompt", ".typing-wall"], { color: "#6b5a1a", duration: 0.5, ease: "power2.inOut" }, 7.5);
+
+      // 8.6–9.1 s: the words and every letter key drop away; Fn stays where it is.
+      tl.to(["#typing-prompt", ".typing-wall"], { y: 700, opacity: 0, duration: 0.45, ease: "power3.in", stagger: 0.05 }, 8.6);
+      tl.to(".typing-letter", { y: 520, rotation: (i) => (i % 2 ? 14 : -11), duration: 0.5, ease: "power3.in", stagger: 0.02 }, 8.62);
+
+      window.__timelines["typing"] = tl;
+    })();
+  </script>
+</template>

@@ -1,0 +1,124 @@
+<template>
+  <style>
+    #root {
+      position: absolute;
+      inset: 0;
+      background: #ffd23f;
+      overflow: hidden;
+      color: #14101f;
+    }
+    #reveal-group {
+      position: absolute;
+      inset: 0;
+    }
+    #reveal-fn {
+      position: absolute;
+      left: 265px;
+      top: 760px;
+      width: 110px;
+      height: 110px;
+    }
+    #reveal-fn-cap {
+      width: 110px;
+      height: 110px;
+      border-radius: 22px;
+      background: #7c5cff;
+      box-shadow: 0 10px 0 #5a3ed6, 0 18px 30px rgba(20, 16, 31, 0.22);
+      display: grid;
+      place-items: center;
+      font-family: Inter, sans-serif; font-weight: 700; font-size: 40px;
+      color: #ffffff;
+    }
+    .reveal-bar {
+      position: absolute;
+      top: 420px;
+      width: 24px;
+      height: 200px;
+      margin-top: -100px;
+      border-radius: 12px;
+      background: #7c5cff;
+    }
+    #reveal-title {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 600px;
+      text-align: center;
+      font-family: "Archivo Black", sans-serif; font-weight: 400; font-size: 210px; line-height: 1;
+      letter-spacing: -0.02em;
+    }
+    #reveal-title .ltr {
+      display: inline-block;
+      opacity: 0;
+    }
+    #reveal-sub {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 850px;
+      text-align: center;
+      font-family: Inter, sans-serif; font-weight: 600; font-size: 56px;
+    }
+    #reveal-sub .w {
+      display: inline-block;
+      opacity: 0;
+      margin: 0 0.12em;
+    }
+  </style>
+  <div data-hf-id="hf-yqoq" id="root" data-composition-id="reveal" data-width="1920" data-height="1080">
+    <div data-hf-id="hf-o48c" id="reveal-group">
+      <div data-hf-id="hf-v9xd" id="reveal-bars"></div>
+      <div data-hf-id="hf-r02f" id="reveal-fn"><div data-hf-id="hf-cpf0" id="reveal-fn-cap">Fn</div></div>
+    </div>
+    <div data-hf-id="hf-aopa" id="reveal-title">No Hands</div>
+    <div data-hf-id="hf-r7yf" id="reveal-sub"><span data-hf-id="hf-9o0j" class="w">the</span><span data-hf-id="hf-g1bz" class="w">Wispr</span><span data-hf-id="hf-w1sw" class="w">Flow</span><span data-hf-id="hf-45oh" class="w">challenge</span></div>
+  </div>
+  <script>
+    (function () {
+      // Letters of the title, and the voice-wave bars either side of the key (deterministic).
+      const title = document.querySelector("#reveal-title");
+      const word = title.textContent;
+      title.textContent = "";
+      for (const c of word) {
+        const s = document.createElement("span");
+        s.className = "ltr";
+        s.textContent = c === " " ? " " : c;
+        title.appendChild(s);
+      }
+      const barsHost = document.querySelector("#reveal-bars");
+      const bars = [];
+      for (let side = -1; side <= 1; side += 2) {
+        for (let i = 0; i < 8; i++) {
+          const b = document.createElement("div");
+          b.className = "reveal-bar";
+          b.style.left = 960 + side * (215 + i * 40) - 12 + "px";
+          barsHost.appendChild(b);
+          bars.push({ el: b, i });
+        }
+      }
+
+      const tl = gsap.timeline({ paused: true });
+      // 0–0.7 s: Fn travels to the centre and grows into the hero.
+      tl.fromTo("#reveal-fn", { x: 0, y: 0, scale: 1 }, { x: 640, y: -395, scale: 3.2, duration: 0.7, ease: "expo.out" }, 0.05);
+      // 1.1 s: it is pressed and held.
+      tl.fromTo("#reveal-fn-cap", { y: 0, boxShadow: "0 10px 0 #5a3ed6, 0 18px 30px rgba(20,16,31,0.22)" }, { y: 8, boxShadow: "0 2px 0 #5a3ed6, 0 6px 12px rgba(20,16,31,0.2)", duration: 0.08, ease: "power2.out" }, 1.1);
+      // The voice comes out of it: bars rise outward, then talk.
+      bars.forEach(({ el, i }, n) => {
+        const at = 1.15 + i * 0.035;
+        tl.fromTo(el, { scaleY: 0.02, opacity: 0 }, { scaleY: 0.25 + 0.75 * Math.abs(Math.sin((i + 1) * 1.7)), opacity: 1, duration: 0.35, ease: "expo.out" }, at);
+        for (let k = 1; k <= 6; k++) {
+          const h = 0.18 + 0.82 * Math.abs(Math.sin((i + 1) * 1.3 + k * 2.1 + n * 0.37));
+          tl.to(el, { scaleY: h, duration: 0.22, ease: "power2.inOut" }, at + 0.3 + k * 0.24);
+        }
+      });
+      // 1.9 s: key and wave lift; the name lands under them.
+      tl.to("#reveal-group", { y: -150, scale: 0.62, transformOrigin: "960px 420px", duration: 0.6, ease: "power3.inOut" }, 1.6);
+      tl.fromTo("#reveal-title .ltr", { opacity: 0.25, filter: "blur(6px)", y: 30 }, { opacity: 1, filter: "blur(0px)", y: 0, duration: 0.35, ease: "expo.out", stagger: 0.06 }, 1.75);
+      tl.fromTo("#reveal-sub .w", { opacity: 0, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.14, ease: "power4.out", stagger: 0.08 }, 2.45);
+      // 3.85 s: everything leaves upward for the next beat.
+      tl.to(["#reveal-group", "#reveal-title", "#reveal-sub"], { y: "-=900", duration: 0.35, ease: "power3.in" }, 3.85);
+
+      window.__timelines["reveal"] = tl;
+    })();
+  </script>
+</template>
