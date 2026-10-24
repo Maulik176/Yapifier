@@ -5,8 +5,13 @@ import type { Callout, Edit, Title } from "./types";
 
 type Ctx = CanvasRenderingContext2D;
 
-const FONT = "Inter, system-ui, -apple-system, sans-serif";
-const YELLOW = "#ffd23f";
+const FONT = "Figtree, system-ui, -apple-system, sans-serif";
+const SERIF = '"EB Garamond", Garamond, Georgia, serif';
+const INK = "#1a1a1a";
+const CREAM = "#ffffeb";
+const LAVENDER = "#f0d7ff";
+const EMBER = "#ffa946";
+const TEAL = "#034f46";
 
 // 0→1 near the start of a span, 1→0 near its end, eased.
 function envelope(t: number, start: number, end: number, ramp = 0.35): number {
@@ -39,11 +44,16 @@ function viewAt(edits: Edit[], srcT: number): View {
 
 let pixelCanvas: HTMLCanvasElement | null = null;
 
+// Largest font size (up to max) at which text fits in maxW.
+function fitFont(ctx: Ctx, text: string, weight: string, family: string, max: number, maxW: number): number {
+  ctx.font = `${weight} ${max}px ${family}`;
+  const w = ctx.measureText(text).width;
+  return w > maxW ? Math.floor((max * maxW) / w) : max;
+}
+
+// A cream card with a serif headline, an ink rule that draws in, and a teal sub line.
 function drawTitle(ctx: Ctx, W: number, H: number, title: Title, local: number) {
-  const g = ctx.createLinearGradient(0, 0, W, H);
-  g.addColorStop(0, "#1a1530");
-  g.addColorStop(1, "#0c0a12");
-  ctx.fillStyle = g;
+  ctx.fillStyle = CREAM;
   ctx.fillRect(0, 0, W, H);
   const out = Math.max(0, local - (title.duration - 0.35)) / 0.35; // fade at the end
   const p = spring(local - 0.1, 0.9, 11);
@@ -52,15 +62,19 @@ function drawTitle(ctx: Ctx, W: number, H: number, title: Title, local: number) 
   ctx.globalAlpha = Math.max(0, 1 - out);
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillStyle = "#ffffff";
+  ctx.fillStyle = INK;
   ctx.globalAlpha *= Math.min(1, p * 1.5);
-  ctx.font = `800 ${Math.round(H * 0.085)}px ${FONT}`;
-  ctx.fillText(title.text, W / 2, H * 0.47 + (1 - p) * H * 0.05);
+  const size = fitFont(ctx, title.text, "400", SERIF, Math.round(H * 0.12), W * 0.86);
+  ctx.font = `400 ${size}px ${SERIF}`;
+  ctx.fillText(title.text, W / 2, H * 0.45 + (1 - p) * H * 0.05);
+  const rule = W * 0.08 * Math.min(1, q);
+  ctx.fillRect(W / 2 - rule / 2, H * 0.45 + size * 0.62, rule, Math.max(2, H * 0.004));
   if (title.sub) {
     ctx.globalAlpha = Math.max(0, 1 - out) * Math.min(1, q * 1.5);
-    ctx.fillStyle = "#b9a8ff";
-    ctx.font = `500 ${Math.round(H * 0.038)}px ${FONT}`;
-    ctx.fillText(title.sub, W / 2, H * 0.58 + (1 - q) * H * 0.04);
+    ctx.fillStyle = TEAL;
+    const subSize = fitFont(ctx, title.sub, "500", FONT, Math.round(H * 0.038), W * 0.8);
+    ctx.font = `500 ${subSize}px ${FONT}`;
+    ctx.fillText(title.sub, W / 2, H * 0.45 + size * 0.62 + H * 0.07 + (1 - q) * H * 0.04);
   }
   ctx.restore();
 }
@@ -70,11 +84,14 @@ function drawCallout(ctx: Ctx, W: number, H: number, c: Callout, px: number, py:
   ctx.save();
   ctx.globalAlpha = pop;
   const r = H * 0.012;
-  ctx.fillStyle = YELLOW;
+  ctx.fillStyle = EMBER;
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = Math.max(1.5, H * 0.003);
   ctx.beginPath();
   ctx.arc(px, py, r * (0.6 + 0.4 * pop), 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = "rgba(255,210,63,0.45)";
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(255,169,70,0.5)";
   ctx.lineWidth = r * 0.8;
   ctx.beginPath();
   ctx.arc(px, py, r * 2.2, 0, Math.PI * 2);
@@ -89,17 +106,23 @@ function drawCallout(ctx: Ctx, W: number, H: number, c: Callout, px: number, py:
   const up = py - bh - H * 0.06 > 0;
   const bx = right ? px + H * 0.05 : px - H * 0.05 - bw;
   const by = up ? py - H * 0.05 - bh : py + H * 0.05;
-  ctx.strokeStyle = YELLOW;
+  ctx.strokeStyle = EMBER;
   ctx.lineWidth = Math.max(2, H * 0.004);
   ctx.beginPath();
   ctx.moveTo(px, py);
   ctx.lineTo(right ? bx : bx + bw, up ? by + bh : by);
   ctx.stroke();
-  ctx.fillStyle = YELLOW;
+  ctx.fillStyle = LAVENDER;
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = Math.max(2, H * 0.0035);
+  ctx.shadowColor = "rgba(0,0,0,0.25)";
+  ctx.shadowBlur = H * 0.02;
   ctx.beginPath();
   ctx.roundRect(bx, by + (1 - pop) * 10, bw, bh, bh / 2);
   ctx.fill();
-  ctx.fillStyle = "#14101f";
+  ctx.shadowColor = "transparent";
+  ctx.stroke();
+  ctx.fillStyle = INK;
   ctx.textBaseline = "middle";
   ctx.textAlign = "center";
   ctx.fillText(c.text, bx + bw / 2, by + bh / 2 + (1 - pop) * 10);
@@ -153,16 +176,20 @@ export function renderFrame(ctx: Ctx, W: number, H: number, video: HTMLVideoElem
     const h = (hl.h / v.sh) * H;
     const pad = H * 0.012;
     ctx.save();
-    ctx.fillStyle = `rgba(8,6,14,${0.62 * k})`;
+    ctx.fillStyle = `rgba(26,26,26,${0.62 * k})`;
     ctx.beginPath();
     ctx.rect(0, 0, W, H);
     ctx.roundRect(x - pad, y - pad, w + pad * 2, h + pad * 2, H * 0.02);
     ctx.fill("evenodd");
-    ctx.strokeStyle = YELLOW;
+    // Ember on an ink edge, so the frame shows on light and dark footage alike.
     ctx.globalAlpha = k;
-    ctx.lineWidth = Math.max(2, H * 0.005);
     ctx.beginPath();
     ctx.roundRect(x - pad, y - pad, w + pad * 2, h + pad * 2, H * 0.02);
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = Math.max(4, H * 0.009);
+    ctx.stroke();
+    ctx.strokeStyle = EMBER;
+    ctx.lineWidth = Math.max(2, H * 0.005);
     ctx.stroke();
     ctx.restore();
   }

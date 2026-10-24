@@ -1,0 +1,63 @@
+# Yapifier
+
+Voice-driven video editor, built for the WeMakeDevs × Wispr Flow "No Hands" hackathon (solo, Builders track, due Fri 30 Oct 2026 11:59 pm IST, our freeze Thu 29 Oct). Brief, judging and dates: `planning/BRIEF.md`.
+
+You pause any video, click the spot, hold Fn and say the change with Wispr Flow. Claude looks at the paused frame and returns edit ops, and the app re-renders the edit. **Edits never touch the footage's pixels:** they are laid over and around it (zoom, callout, highlight, blur, cut, speed, freeze, title card, volume).
+
+- Live: https://yapifier.vercel.app (Vercel project `yapifier`). **Every push to `main` auto-deploys to production.**
+- Repo: https://github.com/Maulik176/Yapifier (private).
+
+## Commands
+
+```bash
+npm run dev        # http://localhost:5173, serves /api/apply through the Vite middleware
+npm run typecheck  # tsc -b; delete tsconfig.tsbuildinfo afterwards (it's ignored)
+npm run build      # typecheck + production build into dist/
+```
+
+## Layout
+
+- `src/edit/`: the engine, with no React in it.
+  - `types.ts`: edits, source, notes, versions. Times are **source seconds**; positions are **fractions of the frame (0–1)**.
+  - `timeline.ts`: turns edits into play/hold segments; maps edited time ↔ source time.
+  - `ops.ts`: the only way edits change. It validates and clamps every op from Claude. It's shared with the server, so it has no DOM imports.
+  - `render.ts`: paints one frame (zoom window, pixelated blur, spotlight, callouts, title cards); `toSource`/`toOutput` map clicks through a zoom.
+  - `player.ts`: drives the `<video>` through cuts, speed changes and holds; routes audio through Web Audio for volume edits and recording.
+  - `media.ts`: upload reading, filmstrip thumbnails, waveform, frame snapshots, real-time export (MediaRecorder, MP4 where supported).
+  - `sample.ts`: the sample video and its 5 sample notes. **Their coordinates must match what is on screen in the sample.**
+- `src/components/`: Landing, Stage (canvas + pins + note box), Timeline, Panels (notes with frames, answer box, versions), NotePopover.
+- `server/apply.ts`: the `/api/apply` handler (prompt, JSON schema, redaction, rate limits). `api/apply.ts` is the Vercel wrapper; `vite.config.ts` mounts the same handler in dev.
+- `public/samples/no-hands-sample.mp4`: the judges' sample (720p web copy).
+- `sample-video/`: the HyperFrames project that makes the sample (see below).
+- `planning/`: brief, plan, research and icon options. Not deployed.
+- `spikes/`: day-1 experiments. Not deployed.
+
+## Rules for this repo
+
+- **Claude API:** official `@anthropic-ai/sdk`, model `claude-opus-5-5`, effort `low` (env `APPLY_MODEL`, `APPLY_EFFORT`), structured output via `output_config.format`, `fallbacks: "default"` with beta `server-side-fallback-2026-07-01`. The SDK is loaded lazily inside the handler.
+- **Keys:** `ANTHROPIC_API_KEY` lives in `.env.local` for dev and in Vercel production env (sensitive). Never print, commit or paste it. `DAILY_APPLY_CAP` is optional.
+- **Server-side imports use explicit `.js` extensions** (`../src/edit/ops.js`). Vercel runs the function as ESM and breaks on extensionless relative imports.
+- **Privacy:** uploaded videos never leave the browser; only the pinned frame (JPEG, 640 px) and the note text go to Claude. Notes are redacted (emails, key-like strings, phone numbers) before the call. New blur boxes get a safety margin in `ops.ts`.
+- **Note text is data:** the prompt wraps it in `<note>`/`<answer>` tags; keep that when changing the prompt.
+- **No company assets in public:** don't put material from Maulik's employer or other brands into the app, the sample or the repo.
+- **Judges' path:** the landing's "Try it on a sample video" plus "No mic? Load 5 sample notes" must always work with zero setup. Typing works when Flow isn't installed. Export needs Chrome or Edge.
+- **Commit messages:** use Maulik's dictated words when he gives a note (the hackathon scores how much writing went through Flow). End with the `Co-Authored-By` trailer.
+
+## Gotchas on this machine
+
+- **iCloud offloads files.** The project is on the iCloud-synced Desktop, and a full disk once turned 4,000+ files in `node_modules` into "dataless" placeholders, which hung node, Vite and tsc. `node_modules` is a symlink to `node_modules.nosync` (iCloud ignores `.nosync`), and `vite.config.ts` sets `resolve.preserveSymlinks: true`. `npm install` replaces the symlink with a real folder, so afterwards run:
+  `rm -rf node_modules.nosync && mv node_modules node_modules.nosync && ln -s node_modules.nosync node_modules`
+  If anything hangs for no reason, check `find node_modules/ -flags +dataless | wc -l` and `df -h` first.
+- **The Bash sandbox can't read the macOS keychain,** so Vercel CLI commands (`npx vercel@65.2.0 …`) need the sandbox disabled. The Anthropic SDK test scripts are more reliable through the running dev server than through a sandboxed `node`.
+- **The Mac has 8 GB of RAM.** Stop dev servers and previews you aren't using.
+
+## The sample video (`sample-video/`)
+
+A 36 s HyperFrames film ("No Hands" teaser, marked as not official) with five planted fixes: dead air in the first 2 s, 22 px judging small print, a fake `team@example.com`, the ₹1,00,000 headline, the register button. `SPEC.md`, `STORYLINES.md` and `REVIEW.md` are inside.
+
+- Voice: `npx hyperframes tts` (Kokoro). It needs `HYPERFRAMES_PYTHON=~/.cache/yapifier-venv/bin/python` (Python 3.13 venv with `kokoro-onnx`, kept outside iCloud).
+- Music: synthesized with the motion-reel kit's `music.py` from a scratch folder; the result is `assets/audio/music.mp3`.
+- Use `font-family:` (not the `font:` shorthand) for bundled fonts, or the renderer falls back to another face.
+- Render: `npx hyperframes@0.8.191 render --output renders/no-hands-sample.mp4`. Then make the web copy:
+  `ffmpeg -i sample-video/renders/no-hands-sample.mp4 -vf scale=1280:-2 -c:v libx264 -preset slow -crf 21 -pix_fmt yuv420p -movflags +faststart -af loudnorm=I=-15:TP=-1.5:LRA=11 -ar 48000 -c:a aac -b:a 160k public/samples/no-hands-sample.mp4`
+- If the sample changes, re-check the sample notes' `srcT`, `x` and `y` in `src/edit/sample.ts`.

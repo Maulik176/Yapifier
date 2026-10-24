@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { describe } from "../edit/ops";
 import { formatTime } from "../edit/timeline";
-import type { Note, Version } from "../edit/types";
+import type { Edit, Note, Version } from "../edit/types";
+import { KIND_COLOR } from "./Timeline";
 
 // Reply to the editor's question. Same Flow detection as the note box.
 function AnswerBox({ onAnswer }: { onAnswer: (text: string, spoken: boolean) => void }) {
@@ -102,5 +104,41 @@ export function VersionsPanel({ versions, viewing, onView }: { versions: Version
         ) : null,
       )}
     </div>
+  );
+}
+
+// Every edit in the version on screen, in time order. Click one to jump to it; × removes it.
+export function EditsList({
+  edits,
+  selected,
+  removable,
+  onPick,
+  onRemove,
+}: {
+  edits: Edit[];
+  selected: string | null;
+  removable: boolean;
+  onPick: (e: Edit) => void;
+  onRemove: (id: string) => void;
+}) {
+  const at = (e: Edit) => ("start" in e ? e.start : e.at);
+  return (
+    <ul className="edits">
+      {[...edits]
+        .sort((a, b) => at(a) - at(b))
+        .map((e) => (
+          <li key={e.id} className={e.id === selected ? "edit-row selected" : "edit-row"}>
+            <button className="edit-pick" onClick={() => onPick(e)}>
+              <span className="swatch" style={{ background: KIND_COLOR[e.kind] }} />
+              <span>{describe(e)}</span>
+            </button>
+            {removable && (
+              <button className="icon" aria-label={`Remove: ${describe(e)}`} title="Remove this edit (Delete)" onClick={() => onRemove(e.id)}>
+                ×
+              </button>
+            )}
+          </li>
+        ))}
+    </ul>
   );
 }

@@ -23,6 +23,7 @@ export default function Landing({ onFile, onSample, error, loading }: Props) {
     <main className="landing">
       <section className="hero">
         <img src="/icon.svg" alt="" className="hero-icon" width={72} height={72} />
+        <p className="kicker">A video editor you talk to</p>
         <h1>
           See it. Point at it. <span className="accent">Say it.</span>
         </h1>
@@ -79,7 +80,8 @@ export default function Landing({ onFile, onSample, error, loading }: Props) {
         ))}
       </ol>
       <p className="footnote">
-        Built for the WeMakeDevs × Wispr Flow “No Hands” challenge. Works best in Chrome with <a href="https://wisprflow.ai" target="_blank" rel="noreferrer">Wispr Flow</a>; typing works too.
+        Built for the WeMakeDevs × Wispr Flow “No Hands” challenge; not an official Wispr Flow product. Works best in Chrome with{" "}
+        <a href="https://wisprflow.ai" target="_blank" rel="noreferrer">Wispr Flow</a>; typing works too.
       </p>
     </main>
   );

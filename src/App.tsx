@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Landing from "./components/Landing";
 import NotePopover from "./components/NotePopover";
-import { NotesPanel, VersionsPanel } from "./components/Panels";
+import { EditsList, NotesPanel, VersionsPanel } from "./components/Panels";
 import Stage from "./components/Stage";
 import Timeline from "./components/Timeline";
 import { exportFormat, MAX_UPLOAD_MB, readSource, recordExport, snapshot, thumbnails, waveform } from "./edit/media";
-import { applyOps, type Op } from "./edit/ops";
+import { applyOps, describe, type Op } from "./edit/ops";
 import { Player } from "./edit/player";
 import { toSource } from "./edit/render";
 import { SAMPLE, SAMPLE_NOTES } from "./edit/sample";
 import { formatTime, srcToOut } from "./edit/timeline";
 import type { Change, Edit, Note, Source, Version } from "./edit/types";
+import { useTheme } from "./theme";
 
 interface PendingPin {
   outT: number;
@@ -28,6 +29,12 @@ interface ApplyResult {
   summary: string;
   question: string;
   ops: Op[];
+}
+
+// An undone version, with the notes it touched as they were, so redo can put both back.
+interface Undone {
+  version: Version;
+  notes: Note[];
 }
 
 let nextId = 1;
@@ -51,6 +58,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [download, setDownload] = useState<{ url: string; name: string } | null>(null);
   const [exporting, setExporting] = useState<{ w: number; h: number } | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [redo, setRedo] = useState<Undone[]>([]);
 
   useEffect(() => {
     if (videoRef.current && !player) setPlayer(new Player(videoRef.current));
@@ -80,6 +89,8 @@ export default function App() {
         setVersions([{ n: 1, edits: [], changes: [] }]);
         setViewing(1);
         setNotes([]);
+        setSelected(null);
+        setRedo([]);
         setPin(null);
         setDownload(null);
         setThumbs([]);
@@ -195,6 +206,7 @@ export default function App() {
       }
       setNotes((all) => all.map((n) => (outcome.has(n.id) ? { ...n, ...outcome.get(n.id)! } : n.status === "pending" ? { ...n, status: "failed", reply: "No answer came back for this note." } : n)));
       if (changes.length) {
+        setRedo([]);
         const n = latest.n + 1;
         setVersions((all) => [...all, { n, edits, changes }]);
         setViewing(n);
@@ -211,6 +223,64 @@ export default function App() {
       setBusy(null);
     }
   }, [player, source, pending, busy, latest]);
+
+  // Hand changes (remove, restore) become a new version too, so they can be undone.
+  const commit = useCallback(
+    (edits: Edit[], label: string) => {
+      const n = latest.n + 1;
+      setVersions((all) => [...all, { n, edits, changes: [{ noteId: "", label }] }]);
+      setViewing(n);
+      setRedo([]);
+    },
+    [latest.n],
+  );
+
+  const removeEdit = useCallback(
+    (id: string) => {
+      const gone = latest.edits.find((e) => e.id === id);
+      if (!gone || busy) return;
+      commit(latest.edits.filter((e) => e.id !== id), `Removed: ${describe(gone)}`);
+      setSelected(null);
+    },
+    [latest.edits, busy, commit],
+  );
+
+  const restore = (n: number) => {
+    const v = versions.find((v) => v.n === n);
+    if (v && !busy) commit(v.edits.map((e) => ({ ...e })), `Restored ${n === 1 ? "the original" : `v${n}`}`);
+  };
+
+  // Undo drops the latest version. Notes it applied go back to waiting, so they can be re-applied or deleted.
+  const undo = useCallback(() => {
+    if (versions.length < 2 || busy) return;
+    const ids = new Set(latest.changes.map((c) => c.noteId).filter(Boolean));
+    setRedo((r) => [...r, { version: latest, notes: notes.filter((n) => ids.has(n.id)) }]);
+    setVersions((all) => all.slice(0, -1));
+    setNotes((all) => all.map((n) => (ids.has(n.id) ? { ...n, status: "pending", reply: undefined, question: undefined } : n)));
+    setViewing(versions[versions.length - 2].n);
+    setSelected(null);
+  }, [versions, latest, notes, busy]);
+
+  const redoLast = useCallback(() => {
+    const last = redo[redo.length - 1];
+    if (!last || busy) return;
+    const back = new Map(last.notes.map((n) => [n.id, n]));
+    setRedo((r) => r.slice(0, -1));
+    setVersions((all) => [...all, last.version]);
+    setNotes((all) => all.map((n) => back.get(n.id) ?? n));
+    setViewing(last.version.n);
+  }, [redo, busy]);
+
+  // Select an edit and show it: title and freeze cards from their first frame, others just before they start.
+  const pick = useCallback(
+    (e: Edit | null) => {
+      setSelected(e?.id ?? null);
+      if (!e || !player) return;
+      const hold = player.segs.find((s) => s.type === "hold" && s.edit.id === e.id);
+      seek(hold ? hold.out0 : Math.max(0, srcToOut(player.segs, "start" in e ? e.start : e.at) - (e.kind === "cut" ? 1 : 0.2)));
+    },
+    [player, seek],
+  );
 
   const doExport = async () => {
     if (!player || !source) return;
@@ -253,11 +323,23 @@ export default function App() {
       } else if (e.key.toLowerCase() === "n" && !e.metaKey && !e.ctrlKey) {
         const r = canvasRef.current?.getBoundingClientRect();
         if (r) point(0.5, 0.5, r.width / 2, r.height / 2, r.width, r.height);
-      } else if (e.key === "Escape") setPin(null);
+      } else if ((e.metaKey || e.ctrlKey) && (e.key.toLowerCase() === "y" || (e.key.toLowerCase() === "z" && e.shiftKey))) {
+        e.preventDefault();
+        redoLast();
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        undo();
+      } else if ((e.key === "Delete" || e.key === "Backspace") && selected && isLatest) {
+        e.preventDefault();
+        removeEdit(selected);
+      } else if (e.key === "Escape") {
+        setPin(null);
+        setSelected(null);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [source, player, togglePlay, seek, apply, point]);
+  }, [source, player, togglePlay, seek, apply, point, undo, redoLast, removeEdit, selected, isLatest]);
 
   const spokenShare = useMemo(() => {
     const words = (s: string) => s.split(/\s+/).filter(Boolean).length;
@@ -269,6 +351,7 @@ export default function App() {
   (window as unknown as { __yap: unknown }).__yap = { player, versions, notes, source };
 
   const length = player?.length ?? 0;
+  const [theme, toggleTheme] = useTheme();
   const fmt = exportFormat();
 
   return (
@@ -303,6 +386,10 @@ export default function App() {
             </button>
           </>
         )}
+        {!source && <div className="spacer" />}
+        <button className="theme-toggle" onClick={toggleTheme} aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"} title={theme === "dark" ? "Light mode" : "Dark mode"}>
+          {theme === "dark" ? "☀" : "☾"}
+        </button>
       </header>
 
       {!source && <Landing onFile={openFile} onSample={() => void open(SAMPLE.url, SAMPLE.name, true)} error={error} loading={opening || !player} />}
@@ -352,13 +439,18 @@ export default function App() {
                   Viewing {shown.n === 1 ? "the original" : `v${shown.n}`} ·{" "}
                   <button className="link" onClick={() => setViewing(latest.n)}>
                     back to v{latest.n}
+                  </button>{" "}
+                  or{" "}
+                  <button className="link" onClick={() => restore(shown.n)}>
+                    restore this one
                   </button>
                 </span>
               )}
               <span className="keys muted">
                 <kbd>Space</kbd> play · <kbd>N</kbd> note · <kbd>←</kbd>
                 <kbd>→</kbd> seek · <kbd>⌘</kbd>
-                <kbd>↵</kbd> apply
+                <kbd>↵</kbd> apply · <kbd>⌘</kbd>
+                <kbd>Z</kbd> undo
               </span>
             </div>
             <Timeline
@@ -371,6 +463,9 @@ export default function App() {
               edits={shown.edits}
               notes={isLatest ? notes : []}
               onSeek={seek}
+              selected={isLatest ? selected : null}
+              onPick={pick}
+              theme={theme}
             />
           </section>
 
@@ -413,9 +508,26 @@ export default function App() {
             </div>
             <div className="panel">
               <div className="panel-head">
-                <h2>Versions</h2>
-                <span className="muted small">{latest.edits.length} edits</span>
+                <h2>Edits</h2>
+                <div className="history">
+                  <button className="secondary small" onClick={undo} disabled={versions.length < 2 || !!busy} title="Undo (⌘Z)">
+                    ↶ Undo
+                  </button>
+                  <button className="secondary small" onClick={redoLast} disabled={!redo.length || !!busy} title="Redo (⇧⌘Z)">
+                    ↷ Redo
+                  </button>
+                </div>
               </div>
+              {shown.edits.length ? (
+                <EditsList edits={shown.edits} selected={isLatest ? selected : null} removable={isLatest && !busy} onPick={pick} onRemove={removeEdit} />
+              ) : (
+                <p className="muted small edits-empty">{isLatest ? "No edits yet. Apply a note and each edit shows up here, with × to remove it." : "No edits in this version."}</p>
+              )}
+              {!isLatest && (
+                <button className="primary restore" onClick={() => restore(shown.n)} disabled={!!busy}>
+                  Restore {shown.n === 1 ? "the original" : `v${shown.n}`}
+                </button>
+              )}
               <VersionsPanel versions={versions} viewing={shown.n} onView={setViewing} />
             </div>
           </aside>
