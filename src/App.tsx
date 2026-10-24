@@ -823,7 +823,7 @@ export default function App() {
               )}
               <AgentLog steps={agentLog} running={!!busy?.startsWith("Applying")} />
               {pending.length > 0 && !busy && (
-                <p className="sends muted small">Apply sends Yappy (powered by Claude) your note text, the frames you paused on, and any frames it checks. The video file stays in your browser.</p>
+                <p className="sends muted small">Apply sends Yappy your note text, the frames you paused on, and any frames it checks. The video file stays in your browser.</p>
               )}
               {busy?.startsWith("Applying") ? (
                 <button className="secondary" onClick={() => applyJob.current?.abort()}>

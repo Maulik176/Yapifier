@@ -108,8 +108,7 @@ try {
   await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 2, mobile: false });
 
   // Landing, light and dark, from a clean profile.
-  await send("Page.navigate", { url: APP });
-  await sleep(500);
+  await load(); // the page must be on the app's origin before localStorage is reachable
   await theme("light");
   await load();
   await shot("landing-light");

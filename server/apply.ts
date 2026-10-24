@@ -221,7 +221,7 @@ function echoable(content: AnthropicClient.Beta.BetaContentBlock[]): AnthropicCl
 
 export async function handleApply(request: Request): Promise<Response> {
   if (!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) {
-    return json(503, { error: "The server has no Anthropic API key yet, so notes can't be applied." });
+    return json(503, { error: "The server has no AI key yet, so notes can't be applied." });
   }
   let body: { source?: { duration: number; width: number; height: number }; edits?: Edit[]; notes?: IncomingNote[]; transcript?: unknown };
   try {
@@ -304,7 +304,7 @@ export async function handleApply(request: Request): Promise<Response> {
     }
     return json(200, { results, ms: Date.now() - started, model: MODEL });
   } catch (error) {
-    if (error instanceof Anthropic.AuthenticationError) return json(503, { error: "The server's Anthropic API key was rejected." });
+    if (error instanceof Anthropic.AuthenticationError) return json(503, { error: "The server's AI key was rejected." });
     if (error instanceof Anthropic.RateLimitError) return json(429, { error: "The AI is busy right now. Try again in a minute." });
     if (error instanceof Anthropic.APIError) return json(502, { error: `The AI service returned an error (${error.status}).` });
     if (error instanceof SyntaxError) return json(502, { error: "The edit came back malformed. Try again." });

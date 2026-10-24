@@ -5,7 +5,7 @@
 <p align="center">
   <img alt="No Hands: The Wispr Challenge · Builders" src="https://img.shields.io/badge/No%20Hands-Wispr%20Challenge%20%C2%B7%20Builders-f0d7ff?labelColor=1a1a1a">
   <img alt="Voice input: Wispr Flow" src="https://img.shields.io/badge/voice-Wispr%20Flow-034f46?labelColor=1a1a1a">
-  <img alt="Agent: Claude Opus 5.5" src="https://img.shields.io/badge/agent-Claude%20Opus%205.5-ffa946?labelColor=1a1a1a">
+  <img alt="Agent: Yappy" src="https://img.shields.io/badge/agent-Yappy-ffa946?labelColor=1a1a1a">
   <img alt="Live on Vercel" src="https://img.shields.io/badge/live-yapifier.vercel.app-ffffeb?labelColor=1a1a1a">
 </p>
 
@@ -58,13 +58,13 @@ Flow types a dictation in one go, the way a paste arrives, so each note is label
 
 ## Meet Yappy
 
-Yappy is the editor inside Yapifier: Claude Opus 5.5 with vision and two tools that run **in your browser**, on the original video. Your video file never leaves the page; Yappy asks for exactly the frames it needs.
+Yappy is the editor inside Yapifier: an AI agent with vision and two tools that run **in your browser**, on the original video. Your video file never leaves the page; Yappy asks for exactly the frames it needs.
 
 <p align="center"><img src="docs/media/how-yappy-works.png" width="100%" alt="How Yappy works: 1 you pause, click and say the fix; 2 Yappy reads every note and frame; 3 it calls track and look; 4 your browser runs them on the original video and sends the results back; 5 Yappy returns edit ops in a strict JSON schema; 6 the browser checks and clamps every op and saves a new version"></p>
 
 - **`look(times)`** shows Yappy frames from up to six moments: where the dead air really ends, when an animation settles, what comes next.
 - **`track(box, at)`** answers *"how long does this stay on screen?"*. The browser samples nearby frames (every half second, then narrowing down to about 0.03 s) and estimates when the content in that fixed box stops matching the frame you paused on. That's how a blur covers the time an email is visible, and not the next scene. It's an estimate for a box that stays put, so check it.
-- **Every op is checked before it lands.** Claude's output is a strict JSON schema, then [`src/edit/ops.ts`](src/edit/ops.ts) validates and clamps each op (times inside the video, boxes inside the frame, sensible zoom and speed), refuses a cut that would remove the whole video, and gives every new blur a safety margin.
+- **Every op is checked before it lands.** Yappy answers in a strict JSON schema, then [`src/edit/ops.ts`](src/edit/ops.ts) validates and clamps each op (times inside the video, boxes inside the frame, sensible zoom and speed), refuses a cut that would remove the whole video, and gives every new blur a safety margin.
 - **Your timing wins.** When you ask for timing on purpose (*"from 5 to 12 seconds"*, *"the whole video"*), Yappy marks it exact and it's kept as given. Otherwise a new overlay is fitted to the time its content looks unchanged, and the note tells you so.
 
 <table>
@@ -121,7 +121,7 @@ Yapifier never changes the pixels inside your footage: every edit is laid over i
 
 ## What leaves your browser
 
-| | Stays in your browser | Sent to Claude (Anthropic) |
+| | Stays in your browser | Sent to Yappy |
 |---|---|---|
 | Your video file | ✓ | never |
 | The frame you paused on | | as a 640 px JPEG, with your note |
@@ -130,7 +130,7 @@ Yapifier never changes the pixels inside your footage: every edit is laid over i
 | Your note text | | ✓ (emails, key-like strings and phone numbers are redacted first) |
 | Your project | ✓ autosaved locally | |
 
-Note text is treated as data, not instructions: it reaches Claude inside `<note>` tags with a prompt that says so. The API has per-visitor and daily limits.
+Yappy's AI runs through a third-party model provider's API, which receives only what's in the right-hand column. Note text is treated as data, not instructions: it reaches the model inside `<note>` tags with a prompt that says so. The API has per-visitor and daily limits.
 
 ## Try it
 
@@ -169,8 +169,8 @@ Measured on the sample with its five notes (cut, zoom, spotlight, blur, label), 
 
 | | |
 |---|---|
-| One Apply, five notes, Claude included | 15.7–20.5 s, with one round of checking the video |
-| Claude calls per Apply | 2 (one to plan and call tools, one to answer), 3 if an answer misses a note |
+| One Apply, five notes, AI included | 15.7–20.5 s, with one round of checking the video |
+| Model calls per Apply | 2 (one to plan and call tools, one to answer), 3 if an answer misses a note |
 | Tracking the email box | estimated on screen 30.84–32.31 s; checked by hand on individual frames, it fades in at about 30.6 s and is gone by 32.2 s |
 | Blur coverage after fitting | 30.49–32.66 s (padding covers the fade) |
 | Export | real time: a 34-second edit takes about 34 seconds |
@@ -180,7 +180,7 @@ Measured on the sample with its five notes (cut, zoom, spotlight, blur, label), 
 
 **The edit model.** Edits are data, never pixels: `{kind, start, end, x, y, w, h, …}` in source seconds and fractions of the frame. [`src/edit/timeline.ts`](src/edit/timeline.ts) turns cuts, speed changes, freezes and title cards into play/hold segments; [`src/edit/render.ts`](src/edit/render.ts) paints each output frame on a canvas (zoom window, pixelation or mask, spotlight, labels, spring-animated title cards); [`src/edit/player.ts`](src/edit/player.ts) drives a hidden `<video>` through those segments and routes audio through Web Audio for volume edits and recording.
 
-**The agent loop.** [`server/apply.ts`](server/apply.ts) is one agent step per request. The browser sends the notes and the run so far; the server calls Claude with the tools and a strict JSON schema for the answer, and returns either tool calls or results. Assistant turns go back unchanged and the first message is rebuilt identically each step, so the history only ever grows. [`src/edit/agent.ts`](src/edit/agent.ts) runs the tools; [`src/edit/track.ts`](src/edit/track.ts) reads frames and grayscale patches from a second hidden video. Only the first step of a run counts as an apply for rate limits; transcripts are validated (our tools only, text and JPEG results only, bounded size).
+**The agent loop.** [`server/apply.ts`](server/apply.ts) is one agent step per request. The browser sends the notes and the run so far; the server calls the model with the tools and a strict JSON schema for the answer, and returns either tool calls or results. Assistant turns go back unchanged and the first message is rebuilt identically each step, so the history only ever grows. [`src/edit/agent.ts`](src/edit/agent.ts) runs the tools; [`src/edit/track.ts`](src/edit/track.ts) reads frames and grayscale patches from a second hidden video. Only the first step of a run counts as an apply for rate limits; transcripts are validated (our tools only, text and JPEG results only, bounded size).
 
 **Safety nets.** Media waits time out with a clear message (no hanging on a file the browser can't decode). A WebM copy of the sample serves browsers without H.264. More than eight notes go in batches. A run can be stopped and has a deadline; an export stops on recorder errors or stalled playback.
 
@@ -201,15 +201,15 @@ Solo, in about a week, and mostly by voice. I dictated the specs, reviews and de
 
 - **Point, then speak.** The click carries *where* and *when*; the voice only carries *what*. That's why short, messy notes work.
 - **Edits are data over the footage, never new pixels.** Every edit can be adjusted, undone, compared and exported, and nothing is lost by changing your mind.
-- **The model proposes, the code decides.** Claude returns ops in a strict schema; `ops.ts` validates and clamps every one before it reaches the screen.
-- **Tools run where the video is.** Tracking and frame grabs happen in the browser, so the file never uploads and Claude sees only what it asks for.
+- **The model proposes, the code decides.** Yappy returns ops in a strict schema; `ops.ts` validates and clamps every one before it reaches the screen.
+- **Tools run where the video is.** Tracking and frame grabs happen in the browser, so the file never uploads and Yappy sees only what it asks for.
 - **Say what was really done.** Results shown on a note are worked out from the final edits; uncertainty is labelled ("suggested range… check it").
 - **Correction is part of the product.** An almost-right edit should take one drag, not another prompt.
 
 | Layer | Choice |
 |---|---|
 | Voice | Wispr Flow (dictation into the note and answer boxes) |
-| Agent | Claude Opus 5.5 via the Anthropic SDK: vision, tools, strict JSON output, server-side refusal fallback |
+| Agent | Yappy: a vision model with tool use and strict JSON output, called one step at a time from a serverless function |
 | App | React 19, TypeScript, Vite; canvas rendering, Web Audio, MediaRecorder, IndexedDB |
 | API and hosting | a Vercel function (`api/apply.ts`) and static hosting |
 | Sample video | HyperFrames (HTML rendered to video), Kokoro voice-over |
@@ -218,7 +218,7 @@ Solo, in about a week, and mostly by voice. I dictated the specs, reviews and de
 
 - **Tracking follows a fixed box, not a moving object.** It tells you how long the content inside a box stays as it is. Scrolling or moving content ends the edit early; check it, and widen the box or the times by hand. Real object tracking is next.
 - **Export is real time** and needs Chrome or Edge with the tab in front.
-- **Rate limits live in each server instance**, not across all of them; the Anthropic account's spend limit is the hard cap.
+- **Rate limits live in each server instance**, not across all of them; the AI provider account's spend limit is the hard cap.
 - Tested on Chrome on macOS, mostly with the sample video; not yet on Safari, Windows or 4K footage.
 
 ## What's next

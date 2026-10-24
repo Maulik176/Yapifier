@@ -96,7 +96,7 @@ export default function Landing({ onFile, onSample, saved, onResume, onResumeFil
           <button className="secondary big" onClick={() => input.current?.click()} disabled={loading}>
             Upload your own video
           </button>
-          <p className="drop-hint">Drop an MP4 or WebM here · up to {MAX_UPLOAD_MB} MB, 5 minutes · the file stays in your browser; Yappy (Claude) only gets your notes, the frames you point at and the frames it checks</p>
+          <p className="drop-hint">Drop an MP4 or WebM here · up to {MAX_UPLOAD_MB} MB, 5 minutes · the file stays in your browser; Yappy only sees your notes, the frames you point at and the frames it checks</p>
           <input
             ref={input}
             type="file"

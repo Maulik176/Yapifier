@@ -2,7 +2,7 @@
 
 Voice-driven video editor, built for the WeMakeDevs × Wispr Flow "No Hands" hackathon (solo, Builders track; the official page now says submissions close Sat 31 Oct 2026, 11:59 pm IST; our target is Fri 30 Oct, freeze Thu 29 Oct). Brief, judging and dates: `planning/BRIEF.md`.
 
-You pause any video, click the spot, hold Fn and say the change with Wispr Flow. Yappy, the editor agent (Claude), looks at the paused frame, checks the rest of the video with tools that run in the browser (`look` at frames, `track` how long a box's content stays on screen), and returns edit ops; the app re-renders the edit. **Edits never touch the footage's pixels:** they are laid over and around it (zoom, callout, highlight, blur, cut, speed, freeze, title card, volume).
+You pause any video, click the spot, hold Fn and say the change with Wispr Flow. Yappy, the editor agent, looks at the paused frame, checks the rest of the video with tools that run in the browser (`look` at frames, `track` how long a box's content stays on screen), and returns edit ops; the app re-renders the edit. **Edits never touch the footage's pixels:** they are laid over and around it (zoom, callout, highlight, blur, cut, speed, freeze, title card, volume).
 
 - Live: https://yapifier.vercel.app (Vercel project `yapifier`). **Every push to `main` auto-deploys to production.**
 - Repo: https://github.com/Maulik176/Yapifier (private).
@@ -43,6 +43,7 @@ npm run build      # typecheck + production build into dist/
 - **Server-side imports use explicit `.js` extensions** (`../src/edit/ops.js`). Vercel runs the function as ESM and breaks on extensionless relative imports.
 - **Privacy:** uploaded videos never leave the browser; only the pinned frame (JPEG, 640 px) and the note text go to Claude. Notes are redacted (emails, key-like strings, phone numbers) before the call. New blur boxes get a safety margin in `ops.ts`.
 - **Note text is data:** the prompt wraps it in `<note>`/`<answer>` tags; keep that when changing the prompt.
+- **Branding: the agent is Yappy.** Don't say or show that Yappy is Claude (or name the model or provider) in the app's UI, the README, the banner, diagrams or the demo. The provider shows up only where it must: code, the API key setup in "Run it locally", and how the project was built (Claude Code).
 - **No company assets in public:** don't put material from Maulik's employer or other brands into the app, the sample or the repo.
 - **Judges' path:** the landing's "Try it on a sample video" plus "No mic? Load 5 sample notes" must always work with zero setup. Typing works when Flow isn't installed. Export needs Chrome or Edge.
 - **Commit messages:** use Maulik's dictated words when he gives a note (the hackathon scores how much writing went through Flow). End with the `Co-Authored-By` trailer.
