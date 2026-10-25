@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://yapifier.vercel.app"><b>Live demo</b></a> · <b>Demo video</b> (coming with the submission) · <a href="#try-it">Try it in 30 seconds</a> · <a href="#run-it-locally">Run it locally</a>
+  <a href="https://yapifier.vercel.app"><b>Live demo</b></a> · <a href="https://youtu.be/ExVRB296H3s"><b>Demo video</b></a> · <a href="#try-it">Try it in 30 seconds</a> · <a href="#run-it-locally">Run it locally</a>
 </p>
 
 <p align="center">
@@ -25,6 +25,13 @@ I make product walkthroughs and demo videos at work. Recording one is quick. Pol
 The fix is never hard to say. It's only hard to do.
 
 **Yapifier makes saying it enough.** Pause where something's off, click the spot, hold Fn and say the fix with Wispr Flow. Yappy, the editing agent, looks at that frame, checks the footage around it like an editor scrubbing the timeline, and applies the edit. You watch the new version, fix anything that's almost right by hand, and export an MP4 with sound.
+
+## Watch the demo
+
+<p align="center">
+  <a href="https://youtu.be/ExVRB296H3s"><img src="docs/media/demo-video.jpg" width="100%" alt="Watch the Yapifier demo on YouTube: edit any video just by talking. Point at the spot, hold Fn, say it. No timeline, no typing."></a>
+  <br><sub>3:51 on YouTube: the raw video, four fixes dictated with Wispr Flow, Yappy at work, one edit fixed by hand, and the export.</sub>
+</p>
 
 ## Yapifier in 30 seconds
 
