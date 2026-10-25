@@ -19,7 +19,12 @@ export class Player {
   private audio: { ctx: AudioContext; gain: GainNode; record: MediaStreamAudioDestinationNode } | null = null;
   onEnd: (() => void) | null = null;
 
-  constructor(video: HTMLVideoElement) {
+  // audible: false keeps the sound out of the speakers (the background export
+  // records it without playing it). audioContext: share one, e.g. the preview's.
+  constructor(
+    video: HTMLVideoElement,
+    private options: { audible?: boolean; audioContext?: AudioContext } = {},
+  ) {
     this.video = video;
   }
 
@@ -41,12 +46,12 @@ export class Player {
   // Web Audio needs a user gesture; route the video through it once, for volume edits and recording.
   private ensureAudio() {
     if (this.audio) return this.audio;
-    const ctx = new AudioContext();
+    const ctx = this.options.audioContext ?? new AudioContext();
     const source = ctx.createMediaElementSource(this.video);
     const gain = ctx.createGain();
     const record = ctx.createMediaStreamDestination();
     source.connect(gain);
-    gain.connect(ctx.destination);
+    if (this.options.audible !== false) gain.connect(ctx.destination);
     gain.connect(record);
     this.audio = { ctx, gain, record };
     return this.audio;
@@ -54,6 +59,23 @@ export class Player {
 
   recordStream(): MediaStream {
     return this.ensureAudio().record.stream;
+  }
+
+  // The audio context, created now if needed (call it during a click so the browser lets it play).
+  audioContext(): AudioContext {
+    const { ctx } = this.ensureAudio();
+    if (ctx.state === "suspended") void ctx.resume();
+    return ctx;
+  }
+
+  // Let go of the video and the audio graph (a shared context stays open).
+  dispose() {
+    this.pause();
+    this.onEnd = null;
+    if (!this.audio) return;
+    this.audio.gain.disconnect();
+    if (!this.options.audioContext) void this.audio.ctx.close();
+    this.audio = null;
   }
 
   play() {

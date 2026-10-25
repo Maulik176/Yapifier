@@ -1,7 +1,7 @@
 // Everything that touches raw media: reading an upload, thumbnails for the
 // timeline, the audio waveform, a snapshot of the paused frame, and export.
-import type { Player } from "./player";
-import type { Source } from "./types";
+import { Player } from "./player";
+import type { Edit, Source } from "./types";
 
 export const MAX_UPLOAD_MB = 500;
 export const MAX_SECONDS = 5 * 60;
@@ -109,27 +109,52 @@ export function exportFormat(): { mime: string; ext: string } | null {
   return options.find((o) => MediaRecorder.isTypeSupported(o.mime)) ?? null;
 }
 
-// Records the edited timeline in real time: the export canvas for picture,
-// the player's audio graph for sound. Stops with an error if the recorder fails
-// or playback stalls (a hidden tab), and on cancel; always cleans up.
-export async function recordExport(
-  player: Player,
-  canvas: HTMLCanvasElement,
-  onProgress: (p: number) => void,
-  signal: AbortSignal,
-): Promise<{ blob: Blob; ext: string }> {
+export interface ExportJob {
+  url: string;
+  duration: number; // of the source, in seconds
+  edits: Edit[]; // a frozen copy of the version being exported
+  width: number;
+  height: number;
+  audioContext: AudioContext; // the preview's, so the browser lets it play
+}
+
+// Records one version in real time, in the background: its own hidden video,
+// player and canvas, so the editor stays free while it runs. The sound goes into
+// the recording only, not the speakers. Stops with an error if the recorder
+// fails or playback stalls (a hidden tab pauses it), and on cancel; always cleans up.
+export async function recordExport(job: ExportJob, onProgress: (p: number) => void, signal: AbortSignal): Promise<{ blob: Blob; ext: string }> {
   const fmt = exportFormat();
   if (!fmt) throw new Error("This browser can't record video. Use Chrome or Edge to export.");
-  const video = canvas.captureStream(30).getVideoTracks();
-  const stream = new MediaStream([...video, ...player.recordStream().getAudioTracks()]);
+  const video = document.createElement("video");
+  video.crossOrigin = "anonymous";
+  video.playsInline = true;
+  video.preload = "auto";
+  const ready = mediaEvent(video, "loadeddata");
+  video.src = job.url;
+  await ready;
+
+  const player = new Player(video, { audible: false, audioContext: job.audioContext });
+  player.load(job.duration, job.edits);
+  const canvas = document.createElement("canvas");
+  canvas.width = job.width;
+  canvas.height = job.height;
+  const ctx = canvas.getContext("2d")!;
+  const videoTracks = canvas.captureStream(30).getVideoTracks();
+  const stream = new MediaStream([...videoTracks, ...player.recordStream().getAudioTracks()]);
   const recorder = new MediaRecorder(stream, { mimeType: fmt.mime, videoBitsPerSecond: 5_000_000, audioBitsPerSecond: 160_000 });
   const chunks: Blob[] = [];
   recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+
+  let frame = 0;
   let timer = 0;
   let cleanup = () => {};
+  const paint = (now: number) => {
+    player.draw(ctx, canvas.width, canvas.height, player.tick(now));
+    frame = requestAnimationFrame(paint);
+  };
   try {
-    player.pause();
     player.seek(0);
+    frame = requestAnimationFrame(paint);
     await new Promise((r) => setTimeout(r, 300)); // let the first frame land
     recorder.start(500);
     await new Promise<void>((resolve, reject) => {
@@ -157,7 +182,7 @@ export async function recordExport(
         if (player.outT !== lastT) {
           lastT = player.outT;
           movedAt = performance.now();
-        } else if (performance.now() - movedAt > 8000) fail(new Error("Playback stalled during export. Keep this tab in front and try again."));
+        } else if (performance.now() - movedAt > 8000) fail(new Error("The export paused because Yapifier's tab was hidden. Keep it open in front while it records."));
       }, 250);
       player.play();
     });
@@ -169,8 +194,11 @@ export async function recordExport(
     return { blob: new Blob(chunks, { type: fmt.mime.split(";")[0] }), ext: fmt.ext };
   } finally {
     cleanup();
-    player.pause();
+    cancelAnimationFrame(frame);
     if (recorder.state !== "inactive") recorder.stop();
-    video.forEach((t) => t.stop()); // the audio track belongs to the player and is reused
+    player.dispose();
+    videoTracks.forEach((t) => t.stop());
+    video.removeAttribute("src");
+    video.load();
   }
 }

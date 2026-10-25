@@ -8,7 +8,6 @@ interface Props {
   player: Player;
   aspect: number; // width / height of the source
   notes: Note[];
-  exportCanvas: RefObject<HTMLCanvasElement | null>;
   canvasRef: RefObject<HTMLCanvasElement | null>;
   onTick: (outT: number, srcT: number, playing: boolean) => void;
   onPoint: (x: number, y: number, px: number, py: number, stageW: number, stageH: number) => void;
@@ -18,7 +17,7 @@ interface Props {
   children?: ReactNode;
 }
 
-export default function Stage({ player, aspect, notes, exportCanvas, canvasRef, onTick, onPoint, onPin, showPins, srcT, children }: Props) {
+export default function Stage({ player, aspect, notes, canvasRef, onTick, onPoint, onPin, showPins, srcT, children }: Props) {
   const wrap = useRef<HTMLDivElement>(null);
   const tickRef = useRef(onTick);
   tickRef.current = onTick;
@@ -28,6 +27,7 @@ export default function Stage({ player, aspect, notes, exportCanvas, canvasRef, 
     const ctx = canvas.getContext("2d")!;
     let frame = 0;
     let lastUi = 0;
+    let sent = { outT: -1, srcT: -1, playing: false };
     const loop = (now: number) => {
       const dpr = Math.min(2, window.devicePixelRatio || 1);
       const w = Math.round(canvas.clientWidth * dpr);
@@ -38,17 +38,19 @@ export default function Stage({ player, aspect, notes, exportCanvas, canvasRef, 
       }
       const state: FrameState = player.tick(now);
       player.draw(ctx, w, h, state);
-      const ex = exportCanvas.current;
-      if (ex) player.draw(ex.getContext("2d")!, ex.width, ex.height, state);
-      if (now - lastUi > 60) {
-        tickRef.current(player.outT, state.srcT, player.playing);
+      // Tell the editor about the clock ~16 times a second, and only when it moved:
+      // a paused editor doesn't re-render at all.
+      const moved = player.outT !== sent.outT || state.srcT !== sent.srcT || player.playing !== sent.playing;
+      if (moved && now - lastUi > 60) {
+        sent = { outT: player.outT, srcT: state.srcT, playing: player.playing };
+        tickRef.current(sent.outT, sent.srcT, sent.playing);
         lastUi = now;
       }
       frame = requestAnimationFrame(loop);
     };
     frame = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(frame);
-  }, [player, canvasRef, exportCanvas]);
+  }, [player, canvasRef]);
 
   // Pins for notes made at (about) this moment, drawn where the director clicked.
   const pins = showPins

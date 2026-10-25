@@ -28,7 +28,9 @@ npm run build      # typecheck + production build into dist/
   - `agent.ts`: runs the agent's `look` and `track` tool calls in the browser and builds the tool results.
   - `sample.ts`: the sample video (MP4, with a WebM copy for browsers without H.264) and its 5 sample notes. **Their coordinates must match what is on screen in the sample.**
 - `src/components/`: Landing (with the resume card), Stage (canvas + pins + note box), Timeline, Panels (notes, answer box, agent log, edits list, versions), NotePopover, Inspector (exact times, text, strength, blur style for the selected edit), EditHandles (drag and resize the selected edit on the video).
-- Export records a frozen copy of one version (`exporting.edits`); version switching is locked and Stop cancels it. Hold `O` (or the Original button) shows the untouched footage at the same moment.
+- Export runs in the background (`recordExport` in `media.ts`): its own hidden video, player and canvas record a frozen copy of the chosen version, with the sound going to the recording only, so the editor stays fully usable. Stop cancels it; a hidden tab stalls it. Hold `O` (or the Original button) only swaps the picture to the untouched footage (`Player.showOriginal`); the edited timeline stays the clock.
+- Note and answer boxes take Flow's paste themselves (`src/components/paste.ts`): plain text, or the words out of rich text; a paste with no text shows a hint to press ⌘⌃V (Flow's "paste last transcript"). Flow restores your old clipboard ~0.5 s after pasting.
+- The stage only re-renders the editor when the clock moves, so a paused editor is idle.
 - `src/save.ts`: autosave of the project (and the uploaded video, when it fits) in IndexedDB; the landing page offers to resume it. Hand adjustments to one edit fold into a single version (`Version.tweak`).
 - `server/apply.ts`: the `/api/apply` handler, **one agent step per request** (prompt, tools, JSON schema, redaction, rate limits). The browser sends the run so far as `transcript` and must send assistant turns back unchanged (thinking blocks included); the first user message is rebuilt identically each step. Only the first step counts as an apply for rate limits. `api/apply.ts` is the Vercel wrapper; `vite.config.ts` mounts the same handler in dev.
 - `public/samples/no-hands-sample.mp4`: the judges' sample (720p web copy).
@@ -55,6 +57,8 @@ npm run build      # typecheck + production build into dist/
   If anything hangs for no reason, check `find node_modules/ -flags +dataless | wc -l` and `df -h` first.
 - **The Bash sandbox can't read the macOS keychain,** so Vercel CLI commands (`npx vercel@65.2.0 …`) need the sandbox disabled. The Anthropic SDK test scripts are more reliable through the running dev server than through a sandboxed `node`.
 - **The Mac has 8 GB of RAM.** Stop dev servers and previews you aren't using.
+- **Node:** Vite 8 needs Node 22, but the shell's nvm default can be Node 18 (`styleText` import errors). Prefix commands with `PATH="$HOME/.nvm/versions/node/v22.18.0/bin:$PATH"`; `.claude/launch.json` runs Vite with that Node directly.
+- **Tests:** `npm test` (Node's test runner; Vite loads the TypeScript). Compare tests are in `tests/compare.test.mjs`.
 
 ## The sample video (`sample-video/`)
 

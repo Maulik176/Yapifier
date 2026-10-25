@@ -65,7 +65,6 @@ const newId = () => `n${nextId++}`;
 export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const exportRef = useRef<HTMLCanvasElement>(null);
   const [player, setPlayer] = useState<Player | null>(null);
   const [source, setSource] = useState<Source | null>(null);
   const [opening, setOpening] = useState(false);
@@ -80,8 +79,8 @@ export default function App() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [download, setDownload] = useState<{ url: string; name: string } | null>(null);
-  // The export job: canvas size plus a frozen copy of the version being recorded.
-  const [exporting, setExporting] = useState<{ w: number; h: number; n: number; edits: Edit[] } | null>(null);
+  // The background export: which version, and how far along (0–1).
+  const [exporting, setExporting] = useState<{ n: number; progress: number } | null>(null);
   const exportJob = useRef<AbortController | null>(null);
   const applyJob = useRef<AbortController | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -112,13 +111,12 @@ export default function App() {
   // The selected edit on the latest version, with any drag in progress applied.
   const selectedEdit = isLatest && selected ? ((draft?.id === selected ? draft : latest.edits.find((e) => e.id === selected)) ?? null) : null;
   // While a zoom is selected and paused, show the frame unzoomed so its window can be aimed.
-  const aimingZoom = selectedEdit?.kind === "zoom" && !ui.playing && !exporting;
+  const aimingZoom = selectedEdit?.kind === "zoom" && !ui.playing;
   const viewEdits = useMemo(() => {
-    if (exporting) return exporting.edits; // nothing on screen can change what's being recorded
     let list = draft && isLatest ? shown.edits.map((e) => (e.id === draft.id ? draft : e)) : shown.edits;
     if (aimingZoom) list = list.filter((e) => e.id !== selected);
     return list;
-  }, [exporting, shown.edits, draft, isLatest, aimingZoom, selected]);
+  }, [shown.edits, draft, isLatest, aimingZoom, selected]);
 
   useEffect(() => {
     player?.setEdits(viewEdits);
@@ -217,25 +215,25 @@ export default function App() {
   }, [source, versions, viewing, notes, hasVideo, fileInfo]);
 
   const togglePlay = useCallback(() => {
-    if (!player || exporting) return;
+    if (!player) return;
     setPin(null);
     if (player.playing) player.pause();
     else player.play();
-  }, [player, exporting]);
+  }, [player]);
 
   const seek = useCallback(
     (outT: number) => {
-      if (!player || exporting) return;
+      if (!player) return;
       setPin(null);
       player.pause();
       player.seek(outT);
     },
-    [player, exporting],
+    [player],
   );
 
   const point = useCallback(
     (ox: number, oy: number, px: number, py: number, stageW: number, stageH: number) => {
-      if (!player || exporting) return;
+      if (!player) return;
       if (selected) {
         setSelected(null); // a click away from a selected edit just lets go of it
         return;
@@ -249,7 +247,7 @@ export default function App() {
       const at = toSource(player.edits, srcT, ox, oy);
       setPin({ outT: player.outT, srcT, x: at.x, y: at.y, px, py, stageW, stageH });
     },
-    [player, exporting, selected, isLatest, shown.n, latest.n, ui.srcT],
+    [player, selected, isLatest, shown.n, latest.n, ui.srcT],
   );
 
   const saveNote = (text: string, spoken: boolean) => {
@@ -498,36 +496,32 @@ export default function App() {
     if (next) tweak(next);
   };
 
+  // Export any version in the background: it records from its own hidden player,
+  // so you can keep watching, editing and applying notes meanwhile.
   const doExport = async (n: number) => {
     const version = versions.find((v) => v.n === n);
-    if (!player || !source || !version) return;
-    const wasViewing = viewing;
-    const w = Math.min(1280, source.width - (source.width % 2));
-    const h = Math.round((source.height / source.width) * w / 2) * 2;
+    if (!player || !source || !version || exporting) return;
+    const audioContext = player.audioContext(); // during the click, so the browser lets it play
+    const width = Math.min(1280, source.width - (source.width % 2));
+    const height = Math.round((source.height / source.width) * width / 2) * 2;
     setDownload(null);
     setError(null);
-    setPin(null);
-    const job = { w, h, n: version.n, edits: version.edits };
-    peek(false);
-    setViewing(job.n);
-    setSelected(null);
-    player.setEdits(job.edits);
-    setExporting(job);
-    setBusy("Exporting… 0%");
+    setExporting({ n: version.n, progress: 0 });
     const ctrl = new AbortController();
     exportJob.current = ctrl;
-    await new Promise((r) => setTimeout(r, 50)); // let the export canvas mount
     try {
-      const { blob, ext } = await recordExport(player, exportRef.current!, (p) => setBusy(`Exporting… ${Math.round(p * 100)}%`), ctrl.signal);
+      const { blob, ext } = await recordExport(
+        { url: source.url, duration: source.duration, edits: version.edits, width, height, audioContext },
+        (progress) => setExporting({ n: version.n, progress }),
+        ctrl.signal,
+      );
       const base = source.name.replace(/\.[^.]+$/, "").replace(/^Sample: /, "").replace(/\s*\(.*?\)/g, "").replace(/[^\w-]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase();
-      setDownload({ url: URL.createObjectURL(blob), name: `${base}-yapified-${job.n === 1 ? "original" : `v${job.n}`}.${ext}` });
+      setDownload({ url: URL.createObjectURL(blob), name: `${base}-yapified-${version.n === 1 ? "original" : `v${version.n}`}.${ext}` });
     } catch (e) {
       if (!ctrl.signal.aborted) setError(e instanceof Error ? e.message : String(e));
     } finally {
       exportJob.current = null;
       setExporting(null);
-      setBusy(null);
-      setViewing(wasViewing);
     }
   };
 
@@ -536,11 +530,11 @@ export default function App() {
   // underneath, so letting go never moves the playhead or stops playback.
   const peek = useCallback(
     (on: boolean) => {
-      if (!player || (on && exporting) || on === peeking) return;
+      if (!player || on === peeking) return;
       player.showOriginal = on;
       setPeeking(on);
     },
-    [player, exporting, peeking],
+    [player, peeking],
   );
 
   useEffect(() => {
@@ -659,11 +653,14 @@ export default function App() {
               </li>
             </ol>
             {exporting ? (
-              <button className="secondary small" onClick={() => exportJob.current?.abort()} title="Stop recording; nothing is saved">
-                Stop export · {busy?.replace(/^Exporting… /, "")}
+              <button className="secondary small exporting" onClick={() => exportJob.current?.abort()} title="Exporting in the background; click to stop (nothing is saved)">
+                <span className="export-bar" style={{ width: `${Math.round(exporting.progress * 100)}%` }} aria-hidden />
+                <span>
+                  Exporting {exporting.n === 1 ? "original" : `v${exporting.n}`} · {Math.round(exporting.progress * 100)}% · Stop
+                </span>
               </button>
             ) : (
-              <button className="secondary small" disabled={!!busy || !fmt} onClick={() => setDialog("export")} title={fmt ? `Export any version as ${fmt.ext.toUpperCase()} with sound` : "Export needs Chrome or Edge"}>
+              <button className="secondary small" disabled={!fmt} onClick={() => setDialog("export")} title={fmt ? `Export any version as ${fmt.ext.toUpperCase()} with sound` : "Export needs Chrome or Edge"}>
                 Export
               </button>
             )}
@@ -698,7 +695,6 @@ export default function App() {
               player={player}
               aspect={source.width / source.height}
               notes={isLatest ? notes : []}
-              exportCanvas={exportRef}
               canvasRef={canvasRef}
               onTick={(outT, srcT, playing) => setUi({ outT, srcT, playing })}
               onPoint={point}
@@ -722,7 +718,7 @@ export default function App() {
                   />
                 </>
               )}
-              {selectedEdit && isSpatial(selectedEdit) && !ui.playing && !exporting && !peeking && "start" in selectedEdit && ui.srcT >= selectedEdit.start - 0.05 && ui.srcT <= selectedEdit.end + 0.05 && (
+              {selectedEdit && isSpatial(selectedEdit) && !ui.playing && !peeking && "start" in selectedEdit && ui.srcT >= selectedEdit.start - 0.05 && ui.srcT <= selectedEdit.end + 0.05 && (
                 <EditHandles
                   edit={selectedEdit}
                   viewEdits={viewEdits}
@@ -735,10 +731,9 @@ export default function App() {
                 />
               )}
               {peeking && <div className="stage-banner">Original footage · let go to see your edit</div>}
-              {exporting && <div className="stage-banner">Recording your edit in real time, with sound. Keep this tab open.</div>}
             </Stage>
             <div className="transport">
-              <button className="play" onClick={togglePlay} aria-label={ui.playing ? "Pause" : "Play"} disabled={!!exporting}>
+              <button className="play" onClick={togglePlay} aria-label={ui.playing ? "Pause" : "Play"}>
                 {ui.playing ? "❚❚" : "▶"}
               </button>
               <button
@@ -754,7 +749,7 @@ export default function App() {
                 onPointerUp={() => peek(false)}
                 onPointerCancel={() => peek(false)}
                 onLostPointerCapture={() => peek(false)}
-                disabled={!!exporting || latest.edits.length === 0}
+                disabled={latest.edits.length === 0}
                 title="Hold to see the original footage at this moment (or hold O)"
               >
                 ◐ Hold for original
@@ -868,7 +863,7 @@ export default function App() {
                   Restore {shown.n === 1 ? "the original" : `v${shown.n}`}
                 </button>
               )}
-              <VersionsPanel versions={versions} viewing={shown.n} onView={setViewing} locked={!!exporting} />
+              <VersionsPanel versions={versions} viewing={shown.n} onView={setViewing} />
             </div>
           </aside>
         </main>
@@ -887,6 +882,7 @@ export default function App() {
                 className="primary danger"
                 onClick={() => {
                   setDialog(null);
+                  exportJob.current?.abort();
                   player?.pause();
                   void clearProject();
                   setSource(null);
@@ -917,7 +913,6 @@ export default function App() {
         />
       )}
       <video ref={videoRef} className="hidden-video" playsInline crossOrigin="anonymous" />
-      {exporting && <canvas ref={exportRef} width={exporting.w} height={exporting.h} className="hidden-canvas" />}
     </div>
   );
 }

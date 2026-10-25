@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { describe } from "../edit/ops";
+import { placeCaret, takePaste } from "./paste";
 import { formatTime } from "../edit/timeline";
 import type { AgentStep, Edit, Note, Version } from "../edit/types";
 import { KIND_COLOR } from "./Timeline";
@@ -9,17 +10,25 @@ function AnswerBox({ onAnswer }: { onAnswer: (text: string, spoken: boolean) => 
   const [text, setText] = useState("");
   const [pasted, setPasted] = useState(false);
   const [typed, setTyped] = useState(false);
+  const [emptyPaste, setEmptyPaste] = useState(false);
   const send = () => text.trim() && onAnswer(text.trim(), pasted && !typed);
   return (
     <div className="answer">
       <textarea
         value={text}
         rows={2}
-        placeholder="Hold Fn and answer…"
+        placeholder={emptyPaste && !text ? "That paste had no text. Press ⌘⌃V for your last dictation." : "Hold Fn and answer…"}
         aria-label="Answer the question"
         onChange={(e) => setText(e.target.value)}
-        onPaste={() => setPasted(true)}
-        onBeforeInput={(e) => (e.nativeEvent as InputEvent).inputType === "insertFromPaste" && setPasted(true)}
+        onPaste={(e) => {
+          const el = e.currentTarget;
+          const result = takePaste(e);
+          setEmptyPaste(!result);
+          if (!result) return;
+          setText(result.next);
+          setPasted(true);
+          placeCaret(el, result.caret);
+        }}
         onKeyDown={(e) => {
           e.stopPropagation();
           if (e.key === "Enter" && !e.shiftKey) {
@@ -98,13 +107,12 @@ export function NotesPanel({
   );
 }
 
-// locked: an export is recording one version, so switching is off until it ends.
-export function VersionsPanel({ versions, viewing, onView, locked }: { versions: Version[]; viewing: number; onView: (n: number) => void; locked: boolean }) {
+export function VersionsPanel({ versions, viewing, onView }: { versions: Version[]; viewing: number; onView: (n: number) => void }) {
   return (
     <div className="versions">
       <div className="version-chips" role="tablist" aria-label="Versions">
         {versions.map((v) => (
-          <button key={v.n} role="tab" aria-selected={viewing === v.n} className={viewing === v.n ? "vchip active" : "vchip"} disabled={locked && viewing !== v.n} onClick={() => onView(v.n)}>
+          <button key={v.n} role="tab" aria-selected={viewing === v.n} className={viewing === v.n ? "vchip active" : "vchip"} onClick={() => onView(v.n)}>
             {v.n === 1 ? "Original" : `v${v.n}`}
           </button>
         ))}

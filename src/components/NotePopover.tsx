@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ClipboardEvent } from "react";
+import { placeCaret, takePaste } from "./paste";
 import { formatTime } from "../edit/timeline";
 import { INSERTED_HINT } from "./Panels";
 
@@ -14,22 +15,37 @@ interface Props {
 }
 
 // The note box Flow types into. Flow inserts text as a paste, so a paste with
-// no typed characters means the note was spoken.
+// no typed characters means the note was spoken. See paste.ts for how pastes are taken.
 export default function NotePopover({ px, py, stageW, stageH, t, targetName, onSave, onCancel }: Props) {
   const box = useRef<HTMLTextAreaElement>(null);
   const [text, setText] = useState("");
   const [pasted, setPasted] = useState(false);
   const [typed, setTyped] = useState(false);
+  const [emptyPaste, setEmptyPaste] = useState(false);
 
+  // Keep the caret here while the note is open, also when the window comes back into focus.
   useEffect(() => {
-    box.current?.focus();
+    box.current?.focus({ preventScroll: true });
+    const refocus = () => document.activeElement === document.body && box.current?.focus({ preventScroll: true });
+    window.addEventListener("focus", refocus);
+    return () => window.removeEventListener("focus", refocus);
   }, []);
+
+  const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    const el = e.currentTarget;
+    const result = takePaste(e);
+    setEmptyPaste(!result);
+    if (!result) return;
+    setText(result.next);
+    setPasted(true);
+    placeCaret(el, result.caret);
+  };
 
   const width = Math.min(380, stageW - 24);
   const left = Math.max(12, Math.min(px + 18, stageW - width - 12));
   const above = py > stageH * 0.55;
   const style = above ? { left, bottom: stageH - py + 18, width } : { left, top: Math.min(py + 18, stageH - 150), width };
-  const spoken = pasted && !typed;
+  const spoken = pasted && !typed && !!text;
 
   return (
     <div className="note-popover" style={style} role="dialog" aria-label="Leave a note">
@@ -41,11 +57,7 @@ export default function NotePopover({ px, py, stageW, stageH, t, targetName, onS
         value={text}
         placeholder="Hold Fn and say what to change…"
         onChange={(e) => setText(e.target.value)}
-        onPaste={() => setPasted(true)}
-        onBeforeInput={(e) => {
-          const type = (e.nativeEvent as InputEvent).inputType;
-          if (type === "insertFromPaste") setPasted(true);
-        }}
+        onPaste={onPaste}
         onKeyDown={(e) => {
           e.stopPropagation(); // keep editor shortcuts (Space, N) out of the note box
           if (e.key === "Enter" && !e.shiftKey) {
@@ -66,6 +78,13 @@ export default function NotePopover({ px, py, stageW, stageH, t, targetName, onS
         </span>
         <span className="muted">Enter to save · Esc to cancel</span>
       </div>
+      {emptyPaste && !text && (
+        <p className="note-hint" role="status">
+          Flow's paste arrived without text. Press <kbd>⌘</kbd>
+          <kbd>⌃</kbd>
+          <kbd>V</kbd> to paste your last dictation, or hold Fn and say it again.
+        </p>
+      )}
     </div>
   );
 }
