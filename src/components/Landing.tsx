@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { MAX_UPLOAD_MB } from "../edit/media";
 import { savedAgo, type SavedProject } from "../save";
 
@@ -49,6 +49,38 @@ function ResumeCard({ saved, onResume, onResumeFile, onDiscard, loading }: Pick<
     </div>
   );
 }
+
+// Line icons for the four steps, drawn in the card's own text colour.
+const STEP_ICONS: Record<string, ReactNode> = {
+  // See it: an eye with a play button for a pupil
+  "1": (
+    <>
+      <path d="M2.5 12C5 7.5 8.3 5.5 12 5.5s7 2 9.5 6.5c-2.5 4.5-5.8 6.5-9.5 6.5S5 16.5 2.5 12z" />
+      <path d="M10.6 9.6v4.8l3.9-2.4z" fill="currentColor" stroke="none" />
+    </>
+  ),
+  // Point at it: a cursor clicking, with click marks at its tip
+  "2": (
+    <>
+      <path d="M8.5 6v13.4l3.4-3.3 2.5 5.1 2.4-1.2-2.5-5h4.8z" />
+      <path d="M6 6L4.2 4.2M5.4 9.4H3M9.4 5.4V3" />
+    </>
+  ),
+  // Say it: a microphone
+  "3": (
+    <>
+      <rect x="9" y="3" width="6" height="11" rx="3" />
+      <path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7" />
+    </>
+  ),
+  // Yappy edits it: a wand with sparkles
+  "4": (
+    <>
+      <path d="M4 20L14.5 9.5M12.5 7.5l4 4" />
+      <path d="M18 3l.8 1.9 1.9.8-1.9.8L18 8.4l-.8-1.9-1.9-.8 1.9-.8zM8.5 3.5l.5 1.1 1.1.5-1.1.5-.5 1.1-.5-1.1-1.1-.5 1.1-.5zM19.5 13.5l.5 1.1 1.1.5-1.1.5-.5 1.1-.5-1.1-1.1-.5 1.1-.5z" fill="currentColor" stroke="none" />
+    </>
+  ),
+};
 
 const STEPS = [
   { n: "1", title: "See it", body: "Play your video. Pause where something's off." },
@@ -115,7 +147,14 @@ export default function Landing({ onFile, onSample, saved, onResume, onResumeFil
       <ol className="how">
         {STEPS.map((s) => (
           <li key={s.n}>
-            <span className="how-n">{s.n}</span>
+            <div className="how-top">
+              <span className="how-icon" aria-hidden>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  {STEP_ICONS[s.n]}
+                </svg>
+              </span>
+              <span className="how-n">{s.n}</span>
+            </div>
             <div>
               <b>{s.title}</b>
               <p>{s.body}</p>
@@ -124,7 +163,7 @@ export default function Landing({ onFile, onSample, saved, onResume, onResumeFil
         ))}
       </ol>
       <p className="footnote">
-        Built for the WeMakeDevs × Wispr Flow “No Hands” challenge; not an official Wispr Flow product · build {__BUILD__}. Works best in Chrome with{" "}
+        Built for the WeMakeDevs × Wispr Flow “No Hands” challenge; not an official Wispr Flow product. Works best in Chrome with{" "}
         <a href="https://wisprflow.ai" target="_blank" rel="noreferrer">Wispr Flow</a>; typing works too.
       </p>
     </main>

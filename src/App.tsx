@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import EditHandles, { isSpatial } from "./components/EditHandles";
+import ExportDialog from "./components/ExportDialog";
 import Inspector, { type Adjustment } from "./components/Inspector";
 import Landing from "./components/Landing";
+import Modal from "./components/Modal";
 import NotePopover from "./components/NotePopover";
 import { AgentLog, EditsList, NotesPanel, VersionsPanel } from "./components/Panels";
 import Stage from "./components/Stage";
@@ -12,7 +14,7 @@ import { applyOps, describe, type Op } from "./edit/ops";
 import { Player } from "./edit/player";
 import { toSource } from "./edit/render";
 import { SAMPLE, SAMPLE_NOTES, sampleUrl } from "./edit/sample";
-import { formatTime, locate, srcToOut } from "./edit/timeline";
+import { formatTime, srcToOut } from "./edit/timeline";
 import { Footage, fitToFootage } from "./edit/track";
 import type { AgentStep, Change, Edit, Note, Source, Version } from "./edit/types";
 import { clearProject, loadProject, loadVideo, saveProject, saveVideo, type SavedProject } from "./save";
@@ -91,6 +93,7 @@ export default function App() {
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const wide = useMedia(WIDE);
   const [peeking, setPeeking] = useState(false); // showing the original while O is held
+  const [dialog, setDialog] = useState<"export" | "restart" | null>(null);
 
   useEffect(() => {
     void loadProject().then((p) => p && setSaved(p));
@@ -495,14 +498,17 @@ export default function App() {
     if (next) tweak(next);
   };
 
-  const doExport = async () => {
-    if (!player || !source) return;
+  const doExport = async (n: number) => {
+    const version = versions.find((v) => v.n === n);
+    if (!player || !source || !version) return;
+    const wasViewing = viewing;
     const w = Math.min(1280, source.width - (source.width % 2));
     const h = Math.round((source.height / source.width) * w / 2) * 2;
     setDownload(null);
     setError(null);
     setPin(null);
-    const job = { w, h, n: latest.n, edits: latest.edits };
+    const job = { w, h, n: version.n, edits: version.edits };
+    peek(false);
     setViewing(job.n);
     setSelected(null);
     player.setEdits(job.edits);
@@ -514,36 +520,27 @@ export default function App() {
     try {
       const { blob, ext } = await recordExport(player, exportRef.current!, (p) => setBusy(`Exporting… ${Math.round(p * 100)}%`), ctrl.signal);
       const base = source.name.replace(/\.[^.]+$/, "").replace(/^Sample: /, "").replace(/\s*\(.*?\)/g, "").replace(/[^\w-]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase();
-      setDownload({ url: URL.createObjectURL(blob), name: `${base}-yapified-v${job.n}.${ext}` });
+      setDownload({ url: URL.createObjectURL(blob), name: `${base}-yapified-${job.n === 1 ? "original" : `v${job.n}`}.${ext}` });
     } catch (e) {
       if (!ctrl.signal.aborted) setError(e instanceof Error ? e.message : String(e));
     } finally {
       exportJob.current = null;
       setExporting(null);
       setBusy(null);
+      setViewing(wasViewing);
     }
   };
 
-  // Hold O (or the Original button) to see the untouched footage at this same
-  // moment. Letting go returns to the exact edited position, which a source time
-  // can't express inside a title card or freeze.
-  const peekFrom = useRef(0);
+  // Hold O (or the Original button) to see the untouched footage at this moment.
+  // Only the picture swaps: the edited timeline keeps running (or stays paused)
+  // underneath, so letting go never moves the playhead or stops playback.
   const peek = useCallback(
     (on: boolean) => {
-      if (!player || exporting || on === peeking) return;
-      player.pause();
-      if (on) {
-        peekFrom.current = player.outT;
-        const srcT = locate(player.segs, player.outT).srcT;
-        player.setEdits([]);
-        player.seek(srcT);
-      } else {
-        player.setEdits(viewEdits);
-        player.seek(peekFrom.current);
-      }
+      if (!player || (on && exporting) || on === peeking) return;
+      player.showOriginal = on;
       setPeeking(on);
     },
-    [player, exporting, peeking, viewEdits],
+    [player, exporting, peeking],
   );
 
   useEffect(() => {
@@ -551,18 +548,20 @@ export default function App() {
     const lost = () => peek(false);
     window.addEventListener("keyup", release);
     window.addEventListener("blur", lost);
+    document.addEventListener("visibilitychange", lost);
     return () => {
       window.removeEventListener("keyup", release);
       window.removeEventListener("blur", lost);
+      document.removeEventListener("visibilitychange", lost);
     };
   }, [peek]);
 
   // Keyboard: Space play/pause, N note at the centre, arrows seek, Cmd/Ctrl+Enter apply, hold O for the original.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!source || !player) return;
-      const tag = (e.target as HTMLElement).tagName;
-      if (tag === "TEXTAREA" || tag === "INPUT") return;
+      if (!source || !player || dialog) return;
+      const target = e.target as HTMLElement;
+      if (target.tagName === "TEXTAREA" || target.tagName === "INPUT" || target.isContentEditable) return;
       if (e.key === " ") {
         e.preventDefault();
         togglePlay();
@@ -595,7 +594,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [source, player, togglePlay, seek, apply, point, undo, redoLast, removeEdit, selected, isLatest, peek]);
+  }, [source, player, dialog, togglePlay, seek, apply, point, undo, redoLast, removeEdit, selected, isLatest, peek]);
 
 
   (window as unknown as { __yap: unknown }).__yap = { player, versions, notes, source, footage };
@@ -627,10 +626,7 @@ export default function App() {
         <button
           className="brand"
           onClick={() => {
-            if (!source || !confirm("Start over with a new video? Your notes and edits will be cleared.")) return;
-            void clearProject();
-            setSource(null);
-            setSavedAt(null);
+            if (source) setDialog("restart");
           }}
           disabled={!source}
         >
@@ -667,8 +663,8 @@ export default function App() {
                 Stop export · {busy?.replace(/^Exporting… /, "")}
               </button>
             ) : (
-              <button className="secondary small" disabled={!!busy || !fmt} onClick={() => void doExport()} title={fmt ? `Exports ${fmt.ext.toUpperCase()} with sound` : "Export needs Chrome or Edge"}>
-                {`Export v${latest.n === 1 ? "" : latest.n}`.replace(/ v$/, "")}
+              <button className="secondary small" disabled={!!busy || !fmt} onClick={() => setDialog("export")} title={fmt ? `Export any version as ${fmt.ext.toUpperCase()} with sound` : "Export needs Chrome or Edge"}>
+                Export
               </button>
             )}
           </>
@@ -707,7 +703,7 @@ export default function App() {
               onTick={(outT, srcT, playing) => setUi({ outT, srcT, playing })}
               onPoint={point}
               onPin={(id) => document.getElementById(`note-${id}`)?.scrollIntoView({ block: "nearest" })}
-              showPins={!ui.playing}
+              showPins={!ui.playing && !peeking}
               srcT={ui.srcT}
             >
               {pin && (
@@ -747,9 +743,17 @@ export default function App() {
               </button>
               <button
                 className="secondary small peek"
-                onPointerDown={() => peek(true)}
+                onPointerDown={(e) => {
+                  try {
+                    e.currentTarget.setPointerCapture(e.pointerId); // a release anywhere still reaches the button
+                  } catch {
+                    // no live pointer to capture (synthetic event); keyup, blur and pointerup still release
+                  }
+                  peek(true);
+                }}
                 onPointerUp={() => peek(false)}
-                onPointerLeave={() => peek(false)}
+                onPointerCancel={() => peek(false)}
+                onLostPointerCapture={() => peek(false)}
                 disabled={!!exporting || latest.edits.length === 0}
                 title="Hold to see the original footage at this moment (or hold O)"
               >
@@ -870,6 +874,48 @@ export default function App() {
         </main>
       )}
 
+      {dialog === "restart" && (
+        <Modal
+          title="Start over?"
+          onClose={() => setDialog(null)}
+          actions={
+            <>
+              <button className="secondary" onClick={() => setDialog(null)}>
+                Keep editing
+              </button>
+              <button
+                className="primary danger"
+                onClick={() => {
+                  setDialog(null);
+                  player?.pause();
+                  void clearProject();
+                  setSource(null);
+                  setSavedAt(null);
+                }}
+              >
+                Start over
+              </button>
+            </>
+          }
+        >
+          <p>
+            You'll go back to the start page to open a new video. The notes, edits and versions for <b>{source?.name}</b> will be cleared from this browser.
+          </p>
+        </Modal>
+      )}
+      {dialog === "export" && source && fmt && (
+        <ExportDialog
+          versions={versions}
+          initial={shown.n}
+          duration={source.duration}
+          format={fmt.ext.toUpperCase()}
+          onClose={() => setDialog(null)}
+          onExport={(n) => {
+            setDialog(null);
+            void doExport(n);
+          }}
+        />
+      )}
       <video ref={videoRef} className="hidden-video" playsInline crossOrigin="anonymous" />
       {exporting && <canvas ref={exportRef} width={exporting.w} height={exporting.h} className="hidden-canvas" />}
     </div>

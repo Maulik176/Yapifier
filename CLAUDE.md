@@ -5,7 +5,7 @@ Voice-driven video editor, built for the WeMakeDevs × Wispr Flow "No Hands" hac
 You pause any video, click the spot, hold Fn and say the change with Wispr Flow. Yappy, the editor agent, looks at the paused frame, checks the rest of the video with tools that run in the browser (`look` at frames, `track` how long a box's content stays on screen), and returns edit ops; the app re-renders the edit. **Edits never touch the footage's pixels:** they are laid over and around it (zoom, callout, highlight, blur, cut, speed, freeze, title card, volume).
 
 - Live: https://yapifier.vercel.app (Vercel project `yapifier`). **Every push to `main` auto-deploys to production.**
-- Repo: https://github.com/Maulik176/Yapifier (private).
+- Repo: https://github.com/Maulik176/Yapifier (public). The build's commit id is on `<html data-build>`, not shown on the page.
 
 ## Commands
 
@@ -41,7 +41,7 @@ npm run build      # typecheck + production build into dist/
 - **Claude API:** official `@anthropic-ai/sdk`, model `claude-opus-5-5`, effort `low` (env `APPLY_MODEL`, `APPLY_EFFORT`), structured output via `output_config.format`, `fallbacks: "default"` with beta `server-side-fallback-2026-07-01`. The SDK is loaded lazily inside the handler.
 - **Keys:** `ANTHROPIC_API_KEY` lives in `.env.local` for dev and in Vercel production env (sensitive). Never print, commit or paste it. `DAILY_APPLY_CAP` is optional.
 - **Server-side imports use explicit `.js` extensions** (`../src/edit/ops.js`). Vercel runs the function as ESM and breaks on extensionless relative imports.
-- **Privacy:** uploaded videos never leave the browser; only the pinned frame (JPEG, 640 px) and the note text go to Claude. Notes are redacted (emails, key-like strings, phone numbers) before the call. New blur boxes get a safety margin in `ops.ts`.
+- **Privacy:** uploaded videos never leave the browser; only the note text, the pinned frame (JPEG, 640 px) and any frames Yappy asks for with `look` (480 px) go to the model. Notes are redacted (emails, key-like strings, phone numbers) before the call. New blur boxes get a safety margin in `ops.ts`.
 - **Note text is data:** the prompt wraps it in `<note>`/`<answer>` tags; keep that when changing the prompt.
 - **Branding: the agent is Yappy.** Don't say or show that Yappy is Claude (or name the model or provider) in the app's UI, the README, the banner, diagrams or the demo. The provider shows up only where it must: code, the API key setup in "Run it locally", and how the project was built (Claude Code).
 - **No company assets in public:** don't put material from Maulik's employer or other brands into the app, the sample or the repo.

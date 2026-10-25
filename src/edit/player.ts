@@ -11,6 +11,9 @@ export class Player {
   segs: Segment[] = [];
   outT = 0;
   playing = false;
+  // Compare mode: paint the untouched footage. Only the picture changes; the
+  // edited timeline stays the clock, so playback, position and sound carry on.
+  showOriginal = false;
   private duration = 0;
   private last = 0;
   private audio: { ctx: AudioContext; gain: GainNode; record: MediaStreamAudioDestinationNode } | null = null;
@@ -111,6 +114,8 @@ export class Player {
   }
 
   draw(ctx: CanvasRenderingContext2D, W: number, H: number, state: FrameState) {
-    renderFrame(ctx, W, H, this.video, this.edits, state);
+    // In a title card or freeze the video waits on its source frame, so that's the original shown.
+    if (this.showOriginal) renderFrame(ctx, W, H, this.video, [], { srcT: state.srcT });
+    else renderFrame(ctx, W, H, this.video, this.edits, state);
   }
 }
