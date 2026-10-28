@@ -22,7 +22,7 @@
 
 I make product walkthroughs and demo videos at work. Recording one is quick. Polishing it isn't: scrubbing for the moment the dashboard loads, zooming into text nobody can read at 1080p, hiding an email or a customer name that slipped into the frame, cutting the pause where I hunted for a button. Then the review comes back: *"zoom in at 0:42"*, *"blur that at 1:10"*, *"the intro drags"*. Every comment is another trip through a timeline editor, with keyframes, masks and a mouse.
 
-The fix is never hard to say. It's only hard to do.
+The fix is never hard to say. It's only hard to do. The four fixes in my demo video take me **30–45 minutes by hand in CapCut**. In Yapifier, by voice, they took **under 5 minutes**.
 
 **Yapifier makes saying it enough.** Pause where something's off, click the spot, hold Fn and say the fix with Wispr Flow. Yappy, the editing agent, looks at that frame, checks the footage around it like an editor scrubbing the timeline, and applies the edit. You watch the new version, fix anything that's almost right by hand, and export an MP4 with sound.
 
@@ -60,8 +60,6 @@ Take Flow out and Yapifier is a timeline editor with a text box. Every instructi
 Speaking is faster than typing for this because a review comment is already a sentence. Pointing and talking together is what makes it precise: the click says *where* and *when*, the voice says *what*, and neither has to describe the other. Notes are often messy and sometimes in Hinglish; Yappy is prompted for exactly that.
 
 Flow types a dictation in one go, the way a paste arrives, so each note is labelled **Flow or paste** or **typed**. Yapifier can't tell Flow from an ordinary paste, and says so rather than claiming to.
-
-<!-- TODO before submitting: add the Wispr Flow usage card (Insights) as docs/media/wispr-usage.png and show it here. -->
 
 ## Meet Yappy
 
@@ -171,6 +169,8 @@ npm run dev        # http://localhost:5173 (the API runs inside the dev server)
 `npm run build` type-checks and builds for production. On Vercel, set `ANTHROPIC_API_KEY` in the project's environment variables; `api/apply.ts` serves the same handler.
 
 ## Numbers
+
+**The four fixes in the demo video:** about 30–45 minutes by hand in CapCut, under 5 minutes in Yapifier (my own runs).
 
 Measured on the sample with its five notes (cut, zoom, spotlight, blur, label), live and locally, on Oct 24, 2026:
 
