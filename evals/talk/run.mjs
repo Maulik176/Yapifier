@@ -49,6 +49,7 @@ const vite = await createServer({ configFile: false, logLevel: "silent", server:
 const { handleTalk } = await vite.ssrLoadModule("/server/talk.ts");
 const { parseCommands, isExact } = await vite.ssrLoadModule("/src/edit/commands.ts");
 const { scenes, stripStep } = await vite.ssrLoadModule("/src/edit/scenes.ts");
+const { settleSeeks } = await vite.ssrLoadModule("/src/edit/talk.ts"); // what the app does to Yappy's paused seeks
 // The strip the browser would build for the sample (Footage.keyframes), from the same scene logic.
 const samples = [];
 for (let t = 0; t < FIXTURES.fresh.duration - 0.05; t += stripStep(FIXTURES.fresh.duration)) samples.push({ t: Math.round(t * 100) / 100, grey: grey(t) });
@@ -120,7 +121,7 @@ async function ask(c, i) {
     const data = await res.json();
     if (data.usage) for (const k of Object.keys(usage)) usage[k] += data.usage[k];
     if (!res.ok) return { via: "yappy", error: data.error, actions: [], reply: "", question: "", ms: Date.now() - started, steps: step, usage };
-    if (!data.calls) return { via: "yappy", actions: data.actions, reply: data.reply, question: data.question, choices: data.choices, ms: Date.now() - started, steps: step, usage, looked: transcript.length > 0 };
+    if (!data.calls) return { via: "yappy", actions: settleSeeks(data.actions ?? [], strip.map(({ from, t }) => ({ from, t }))), reply: data.reply, question: data.question, choices: data.choices, ms: Date.now() - started, steps: step, usage, looked: transcript.length > 0 };
     const results = data.calls.map((call) => {
       let content;
       if (call.name === "see_video" && haveStrip) {

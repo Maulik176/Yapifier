@@ -107,6 +107,17 @@ export async function talk(
   }
 }
 
+// A paused seek must land on a frame that shows what was asked for. A scene's
+// start can still show the scene before it fading out, so a paused seek Yappy
+// aimed at a scene's start moves to that scene's keyframe, where it's visible.
+export function settleSeeks(actions: TalkAction[], strip: { from: number; t: number }[]): TalkAction[] {
+  return actions.map((a) => {
+    if (a.do !== "seek" || a.play || a.clock || a.t < 0) return a;
+    const scene = strip.find((k) => Math.abs(k.from - a.t) < 0.2 && k.t - k.from > 0.05);
+    return scene ? { ...a, t: scene.t } : a;
+  });
+}
+
 // Yappy's action as a command for the editor.
 export function toCommand(a: TalkAction): Command | null {
   const version = a.version > 0 ? a.version : a.version === 0 ? "latest" : "current";
