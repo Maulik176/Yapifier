@@ -92,7 +92,10 @@ export const FIXTURES = {
 };
 
 const JUDGING = [21, 25.7];
-const PRIZE = [25.2, 29.5]; // counting starts as the judging table leaves, ~25.3–25.9
+// A prize amount is on screen from about 25.8 s; before that the judging table is still leaving,
+// so a paused seek there shows the wrong slide. Playing from up to a second earlier is fine.
+const PRIZE = [25.8, 29.5];
+const PRIZE_PLAY = [24.8, 29.5];
 const REGISTER = [29.4, 32.5];
 const END = [32.4, 36.1];
 const TITLE = [9.6, 14];
@@ -127,6 +130,11 @@ export const CASES = [
   { cat: "find", fx: "fresh", said: "Go to the end card.", expect: [{ do: "seek", video: END }] },
   { cat: "find", fx: "fresh", said: "Jump to the release notes part.", expect: [{ do: "seek", video: [1.5, 9.5] }] },
   { cat: "find", fx: "fresh", said: "Go to the bit with the prize money.", expect: [{ do: "seek", video: PRIZE }] },
+  // A reviewer's report: "go to where the prize is shown" landed on the judging table, paused.
+  { cat: "find", fx: "fresh", said: "Go to where the prize is shown.", expect: [{ do: "seek", video: PRIZE, play: false }] },
+  { cat: "find", fx: "fresh", said: "Show me the prize.", expect: [{ do: "seek", video: PRIZE, play: false }] },
+  { cat: "find", fx: "fresh", said: "Where does it say 1,00,000?", expect: [{ do: "seek", video: [26.9, 29.5], play: false }] },
+  { cat: "find", fx: "fresh", said: "Play from the prize.", expect: [{ do: "seek", video: PRIZE_PLAY, play: true }] },
   { cat: "find", fx: "fresh", said: "Where does it say three winners?", expect: [{ do: "seek", video: [26.5, 29.5] }] },
   { cat: "find", fx: "fresh", said: "Go to where the website link is shown.", expect: [{ do: "seek", video: REGISTER }] },
   { cat: "find", fx: "fresh", said: "Play from the part about two weeks solo.", expect: [{ do: "seek", video: [17.9, 21.1], play: true }] },
@@ -136,7 +144,7 @@ export const CASES = [
   { cat: "find", fx: "fresh", said: "Go to the No Hands title, the first one.", expect: [{ do: "seek", video: TITLE }] },
   { cat: "find", fx: "fresh", said: "Show me where the scoring percentages are.", expect: [{ do: "seek", video: JUDGING }] },
   { cat: "find", fx: "edited", said: "Go to the judging table.", expect: [{ do: "seek", video: JUDGING }] },
-  { cat: "find", fx: "edited", said: "Play from the money part.", expect: [{ do: "seek", video: PRIZE, play: true }] },
+  { cat: "find", fx: "edited", said: "Play from the money part.", expect: [{ do: "seek", video: PRIZE_PLAY, play: true }] },
   { cat: "hinglish", fx: "fresh", said: "Woh judging wala part dikhao.", expect: [{ do: "seek", video: JUDGING }] },
   { cat: "hinglish", fx: "fresh", said: "Prize amount wali slide pe le chalo.", expect: [{ do: "seek", video: PRIZE }] },
   { cat: "hinglish", fx: "fresh", said: "Email wala part kahan hai?", expect: [{ do: "seek", video: REGISTER }] },
@@ -170,7 +178,7 @@ export const CASES = [
   { cat: "edit", fx: "fresh", said: "Put a label on the register button saying Free to enter.", expect: [{ do: "edit", text: /free to enter/i, place: REGISTER }] },
   { cat: "edit", fx: "fresh", said: "Spotlight the judging table for three seconds.", expect: [{ do: "edit", text: /spotlight|highlight/i, place: JUDGING }] },
   { cat: "edit", fx: "fresh", said: "Freeze this frame for 2 seconds.", expect: [{ do: "edit", text: /freeze/i, place: [11.5, 12.5] }] },
-  { cat: "edit", fx: "fresh", said: "Slow down the part where the prize counts up.", expect: [{ do: "edit", text: /slow/i, place: PRIZE }] },
+  { cat: "edit", fx: "fresh", said: "Slow down the part where the prize counts up.", expect: [{ do: "edit", text: /slow/i, place: PRIZE_PLAY }] },
   { cat: "edit", fx: "fresh", said: "Is email ko blur kar do.", expect: [{ do: "edit", text: /blur/i, place: REGISTER }] },
   { cat: "edit", fx: "fresh", said: "Make the whole video 1.5x faster.", expect: [{ do: "edit", text: /1\.5/ }] },
   { cat: "edit", fx: "edited", said: "Make the label say Free entry instead.", expect: [{ do: "edit", text: /free entry/i }] },

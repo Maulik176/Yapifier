@@ -16,9 +16,9 @@ import { exportFormat, MAX_UPLOAD_MB, mediaEvent, readSource, recordExport, seek
 import { applyOps, describe, type Op } from "./edit/ops";
 import { Player } from "./edit/player";
 import { toSource } from "./edit/render";
-import { SAMPLE, SAMPLE_NOTES, sampleUrl } from "./edit/sample";
+import { SAMPLE, SAMPLE_NOTES, SAMPLE_WORDS, sampleUrl } from "./edit/sample";
 import { formatTime, locate, srcToOut } from "./edit/timeline";
-import { talk, toCommand, type Exchange, type TalkState } from "./edit/talk";
+import { settleSeeks, talk, toCommand, type Exchange, type TalkState } from "./edit/talk";
 import { Footage, fitToFootage, type Keyframe } from "./edit/track";
 import { transcribe } from "./edit/transcribe";
 import type { AgentStep, Captions, Change, Edit, Note, Source, Version, Word } from "./edit/types";
@@ -105,6 +105,7 @@ export default function App() {
   const stripRef = useRef<Keyframe[]>([]); // the video's keyframes, once Yappy has needed them
   const recentRef = useRef<Exchange[]>([]); // the last few commands, so "no, the other one" makes sense
   const [captioning, setCaptioning] = useState<string | null>(null); // making captions: what it's doing now
+  const captionJob = useRef<AbortController | null>(null); // so making captions can be stopped
   const [toast, setToast] = useState<{ text: string; detail?: string; id: number } | null>(null); // a short message over the video
 
   useEffect(() => {
@@ -567,8 +568,10 @@ export default function App() {
     setCaptioning(source.isSample ? "Adding captions" : "Transcribing in the background");
     setError(null);
     if (!source.isSample) showToast("Making captions in the background", "Keep watching: they appear on their own when ready");
+    const ctrl = new AbortController();
+    captionJob.current = ctrl;
     try {
-      const words: Word[] = source.isSample ? await (await fetch(SAMPLE.words)).json() : await transcribe(source.url, setCaptioning);
+      const words: Word[] = source.isSample ? SAMPLE_WORDS : await transcribe(source.url, setCaptioning, ctrl.signal);
       const cues = wordsToCues(words);
       if (!cues.length) throw new Error("No speech was found to caption.");
       const all = versionsRef.current;
@@ -586,8 +589,14 @@ export default function App() {
         await askYappyRef.current(`Translate every caption line to ${lang}.`, false);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      if (ctrl.signal.aborted) showToast("Captions stopped", "Click CC to start again");
+      else {
+        const message = e instanceof Error ? e.message : String(e);
+        setError(message);
+        showToast("Captions didn't finish", "Click CC to try again");
+      }
     } finally {
+      captionJob.current = null;
       setCaptioning(null);
     }
   };
@@ -849,7 +858,7 @@ export default function App() {
         remember(said, `asked: ${answer.question}`);
         return setCommand({ said, ok: true, text: answer.question + seen, choices: answer.choices.slice(0, 4) });
       }
-      const commands = answer.actions.map(toCommand).filter((c): c is Command => c !== null);
+      const commands = settleSeeks(answer.actions, stripRef.current).map(toCommand).filter((c): c is Command => c !== null);
       const r = commands.length ? await runAll(commands, spoken) : { ok: !!answer.reply, text: "" };
       if (ctrl.signal.aborted) return;
       // Yappy's own words when it gave some; what the editor did only adds a step that failed.
@@ -1112,17 +1121,18 @@ export default function App() {
               </button>
               <button
                 className="secondary small"
-                disabled={!!captioning || !!busy}
+                disabled={!captioning && !!busy}
                 onClick={() => {
+                  if (captioning) return captionJob.current?.abort(); // the button stops it while it works
                   const cap = latest.edits.find((e) => e.kind === "captions");
                   if (cap) {
                     if (!isLatest) setViewing(latest.n);
                     pick(cap);
                   } else void addCaptions();
                 }}
-                title={source.isSample ? "Captions from the voiceover" : "Captions from the speech, transcribed in your browser: the audio never leaves it"}
+                title={captioning ? "Stop making captions" : source.isSample ? "Captions from the voiceover" : "Captions from the speech, transcribed in your browser: the audio never leaves it"}
               >
-                {captioning ? `${captioning}…` : latest.edits.some((e) => e.kind === "captions") ? "CC Captions" : "CC Add captions"}
+                {captioning ? `${captioning}… · Stop` : latest.edits.some((e) => e.kind === "captions") ? "CC Captions" : "CC Add captions"}
               </button>
               <span className="clock">
                 {formatTime(ui.outT)} <span className="muted">/ {formatTime(length)}</span>

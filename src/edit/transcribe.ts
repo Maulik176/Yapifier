@@ -2,8 +2,15 @@
 // here (the browser does that off the main thread), then Whisper runs in a Web
 // Worker (whisper.worker.ts), so playback stays smooth while it listens. The
 // audio never leaves the page.
+//
+// It never hangs silently: loading the model must show progress at least once
+// a minute, transcribing gets a time limit from the video's length, and the
+// caller can stop it. Each of those ends the worker, so the next try starts fresh.
 import type { Word } from "./types";
-import type { WorkerMessage } from "./whisper.worker";
+import type { Phase, WorkerMessage } from "./whisper.worker";
+
+const STALL_MS = 60_000; // loading the model with no progress this long has stalled
+const MIN_LIMIT_MS = 120_000; // transcribing takes at most this, or 4× the audio's length
 
 let worker: Worker | null = null; // kept, so the model stays loaded for the next video
 let queue: Promise<unknown> = Promise.resolve(); // one transcription at a time
@@ -27,38 +34,60 @@ async function audio16k(url: string): Promise<Float32Array> {
   }
 }
 
-function listen(audio: Float32Array, onStatus: (text: string) => void): Promise<{ text: string; timestamp: [number, number | null] }[]> {
+function listen(audio: Float32Array, onStatus: (text: string) => void, signal?: AbortSignal): Promise<{ text: string; timestamp: [number, number | null] }[]> {
   worker ??= new Worker(new URL("./whisper.worker.ts", import.meta.url), { type: "module" });
   const w = worker;
+  const limit = Math.max(MIN_LIMIT_MS, (audio.length / 16000) * 4000);
   return new Promise((resolve, reject) => {
-    const stop = () => {
+    let phase: Phase | "start" = "start";
+    let heard = Date.now(); // the worker's last word
+    let began = Date.now(); // when transcribing started
+    const end = () => {
+      clearInterval(watch);
       w.removeEventListener("message", onMessage);
       w.removeEventListener("error", onError);
+      signal?.removeEventListener("abort", onAbort);
     };
+    // Stop the worker too, so a stuck download or run doesn't linger.
+    const fail = (error: Error) => {
+      end();
+      w.terminate();
+      if (worker === w) worker = null;
+      reject(error);
+    };
+    const watch = setInterval(() => {
+      if (phase === "transcribe" ? Date.now() - began > limit : Date.now() - heard > STALL_MS)
+        fail(new Error(phase === "transcribe" ? "Transcribing took too long. Click CC to try again." : "The speech model stopped loading (no progress for a minute). Check the connection, then click CC to try again."));
+    }, 5000);
     const onMessage = (e: MessageEvent<WorkerMessage>) => {
       const m = e.data;
-      if (m.type === "status") return onStatus(m.text);
-      stop();
+      if (m.type === "status") {
+        heard = Date.now();
+        if (m.phase === "transcribe" && phase !== "transcribe") began = Date.now();
+        phase = m.phase;
+        return onStatus(m.text);
+      }
+      end();
       if (m.type === "done") resolve(m.chunks);
-      else reject(new Error(m.message));
+      else reject(new Error(`${m.message} Click CC to try again.`));
     };
-    const onError = () => {
-      stop();
-      worker = null; // start a fresh one next time
-      reject(new Error("The speech model couldn't start in this browser."));
-    };
+    const onError = () => fail(new Error("The speech model couldn't start in this browser. Click CC to try again."));
+    const onAbort = () => fail(new DOMException("Stopped", "AbortError"));
     w.addEventListener("message", onMessage);
     w.addEventListener("error", onError);
+    signal?.addEventListener("abort", onAbort, { once: true });
     w.postMessage({ audio }, [audio.buffer as ArrayBuffer]); // handed over, not copied
   });
 }
 
-export function transcribe(url: string, onStatus: (text: string) => void): Promise<Word[]> {
+export function transcribe(url: string, onStatus: (text: string) => void, signal?: AbortSignal): Promise<Word[]> {
   const job = queue.then(async () => {
+    signal?.throwIfAborted();
     onStatus("Reading the sound");
     const audio = await audio16k(url);
+    signal?.throwIfAborted();
     const end = audio.length / 16000;
-    const chunks = await listen(audio, onStatus);
+    const chunks = await listen(audio, onStatus, signal);
     return chunks.flatMap((c) => {
       const start = c.timestamp[0];
       const stop = c.timestamp[1] ?? end;

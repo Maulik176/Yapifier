@@ -18,7 +18,8 @@ You pause any video, click the spot, hold Fn and say the change with Wispr Flow.
   - PR #1, *Talk to the timeline* (the command bar and `/api/talk`): **merged** 30 Oct and checked on production.
   - PR #2, *Captions* (Whisper in the browser, changed by voice): **merged** 30 Oct.
   - PR #3, docs: README and this file: **merged** 30 Oct.
-  - PR #4, *Exports save themselves*: a finished export (and "Download .srt") goes straight to Downloads with a toast; the panel link stays as "Download again". Check `gh pr view 4` for whether it's merged.
+  - PR #4, *Exports save themselves*: a finished export (and "Download .srt") goes straight to Downloads with a toast; the panel link stays as "Download again": **merged** 30 Oct.
+  - PR #5, *review fixes* (`fix/review-findings`): paused finds land where the thing is visible; captions can't hang (bundled sample words, stall check, time limit, Stop, retry); privacy and eval wording made exact. Check `gh pr view 5`.
 - **Dropped on purpose:** *Reframe for social* (9:16, 1:1, 4:5) and *Publish directly* (YouTube, LinkedIn, Slack). Maulik ended the project at captions. If they come back after judging:
   - **Publish:** YouTube uploads from an unverified Google API project are locked to private until Google audits it. LinkedIn and Slack can't take a browser upload directly and Vercel functions cap a request body at 4.5 MB, so the video would need temporary storage (Vercel Blob) in between. Maulik has to create each developer app himself.
   - **Reframe:** the research notes are in the session history: Premiere Auto Reframe (slower/default/faster), CapCut, OpusClip layouts (fit, split, fill), and safe zones for Reels and Shorts.
@@ -38,7 +39,7 @@ npm run dev        # http://localhost:5173, serves /api/apply and /api/talk thro
 npm run typecheck  # tsc -b; delete tsconfig.tsbuildinfo afterwards (it's ignored)
 npm run build      # typecheck + production build into dist/
 npm test           # unit tests: command parser, keyframe scenes, captions, compare (Node's test runner; Vite loads the TypeScript)
-node evals/talk/run.mjs            # command-bar eval: 109 phrases; accuracy, speed, cost (real API calls, about $0.60 on Opus)
+node evals/talk/run.mjs            # command-bar eval: 113 phrases; how many are interpreted right, speed, cost (real API calls, about $0.60 on Opus)
 TALK_MODEL=claude-haiku-5-5 node evals/talk/run.mjs   # the same against another model (a few cents)
 node evals/talk/run.mjs captions find                 # only some categories
 node docs/media/src/screenshots.mjs docs/media        # README screenshots from the running dev server (makes one apply and a few talk calls)
@@ -59,8 +60,8 @@ node docs/media/src/screenshots.mjs docs/media        # README screenshots from 
   - `commands.ts`: the command bar's own parser. Only exact commands (`isExact`: play, pause, "go to 0:42", nudges, undo/redo, versions, export, "add captions", "turn off the subtitles", "note: …") run locally with no model call; anything else goes to Yappy. Don't grow it phrase by phrase: phrasing is Yappy's job.
   - `talk.ts`: sends a command to `/api/talk`, runs Yappy's `see_video` (the keyframe strip) and `look` calls, and `toCommand` turns Yappy's actions into commands. A repeated `see_video` gets a text answer, never the strip twice.
   - `captions.ts`: captions are an edit kind (`captions`, not in `EDIT_KINDS`, so the agent's ops can't make them). Groups words into short lines, keeps word timing for the bold highlight (`wordsOf` spreads words when a line was rewritten), `rewrite` for fixes and translation, `toSrt` timed through the edit's timeline.
-  - `transcribe.ts` + `whisper.worker.ts`: speech to text for uploads, in the browser. Whisper (`Xenova/whisper-base`, multilingual, q8, WASM) through **transformers.js 4.3.1 loaded from jsDelivr**, running in a **Web Worker**. On the main thread it was one 12.4 s task that froze playback; in the worker, no main-thread task is over 50 ms. The model (about 80 MB) downloads from Hugging Face once per browser, then loads from Cache Storage (`transformers-cache`); the button says "Loading" rather than "Getting" when it's cached.
-  - `sample.ts`: the sample video (MP4, with a WebM copy for browsers without H.264), its 5 sample notes, and `words` (`public/samples/no-hands-sample.words.json`, the voiceover transcribed with whisper-cli, so the sample's captions need no download). **The notes' coordinates must match what is on screen in the sample.**
+  - `transcribe.ts` + `whisper.worker.ts`: speech to text for uploads, in the browser. Whisper (`Xenova/whisper-base`, multilingual, q8, WASM) through **transformers.js 4.3.1 loaded from jsDelivr**, running in a **Web Worker**. On the main thread it was one 12.4 s task that froze playback; in the worker, no main-thread task is over 50 ms. The model (about 80 MB) downloads from Hugging Face once per browser, then loads from Cache Storage (`transformers-cache`); the button says "Loading" rather than "Getting" when it's cached. It never hangs silently: the worker reports a phase (download, load, transcribe); loading with no progress for 60 s, or transcribing past max(120 s, 4× the audio), fails with a message, and the CC button stops it while it works. Each failure ends the worker, so clicking CC again retries fresh.
+  - `sample.ts`: the sample video (MP4, with a WebM copy for browsers without H.264), its 5 sample notes, and `SAMPLE_WORDS` (`src/edit/no-hands-sample.words.json`, the voiceover transcribed with whisper-cli and bundled into the app, so the sample's captions need no download or fetch: a fetch once stalled on a reviewer). **The notes' coordinates must match what is on screen in the sample.**
 - `src/components/`:
   - **Landing**, with the resume card.
   - **Stage:** the canvas, pins, the note box and the toast.
@@ -84,7 +85,7 @@ node docs/media/src/screenshots.mjs docs/media        # README screenshots from 
   - **Answer:** editor actions in a strict schema (seek, play, pause, nudge, apply, undo, redo, view, restore, export, original, remove, note, edit, captions) plus a reply, or a question with 2–4 choices.
   - **Limits:** at most 3 tool rounds; the last round runs with `tool_choice: none`, so it answers. Its own rate limits (`DAILY_TALK_CAP`). Logs token usage per step.
   - `api/talk.ts` is the Vercel wrapper; `vite.config.ts` mounts both handlers in dev.
-- `evals/talk/`: the command-bar test set (`cases.mjs`: 109 phrases with fixtures and expected actions; the scene map of the sample is in its header comment) and runner (`run.mjs`: parser first as in the app, the real handler for the rest, ffmpeg frames for the tools, scoring, tokens and cost). Results and frames go to the ignored `results/` and `.cache/`.
+- `evals/talk/`: the command-bar test set (`cases.mjs`: 113 phrases with fixtures and expected actions; the scene map of the sample is in its header comment) and runner (`run.mjs`: parser first as in the app, the real handler for the rest, ffmpeg frames for the tools, scoring, tokens and cost). Results and frames go to the ignored `results/` and `.cache/`.
 - `tests/`: `commands`, `scenes`, `captions` and `compare` tests.
 - `docs/media/`: README images; `src/` has the screenshot script and the banner and diagram sources (`sh docs/media/src/render.sh`).
 - `public/samples/`: the judges' sample (720p web copy, WebM copy, voiceover words).
@@ -93,9 +94,10 @@ node docs/media/src/screenshots.mjs docs/media        # README screenshots from 
 
 ## Measured (keep claims to these, or re-measure)
 
-- **Command bar,** Oct 30 eval on the sample (final code): Opus 5.5 107/109 (both misses were on-screen finds landing about 0.5 s before their scene), median 3.0 s, p90 4.0 s, about 0.7¢ per command sent to Yappy. 25 of 109 phrases are handled by the parser with no call. Haiku 5.5 scored 92/99 at about 0.02¢, but blurred the words "client email" instead of the email address, so the command bar stays on Opus.
+- **Command bar,** Oct 30 eval on the sample (after the paused-find fix): Opus 5.5 112/113, median 2.7 s, p90 4.1 s, about 0.7¢ per command sent to Yappy; the miss is "play from where the keyboard shows up" starting at 0:00. It measures **interpretation** (the right editor actions) on a curated set, not finished edits; say so wherever the number appears. 25 of 113 phrases are handled by the parser with no call. Paused finds land on a keyframe's own time (prompt rule, plus `settleSeeks` in `talk.ts` moving a paused seek off a scene's start). Haiku 5.5 scored 92/99 at about 0.02¢, but blurred the words "client email" instead of the email address, so the command bar stays on Opus.
 - **Captions:** the sample's lines come from its words file instantly. An upload of the 36 s sample is captioned in 13–18 s once the model is cached. A cold first call to `/api/talk` on production took about 12 s (keyframes plus cold start); warm calls take about 3 s.
 - **Notes:** five sample notes apply in 16–22 s.
+- **Export, checked frame by frame (Oct 30):** the sample with five notes and captions, saved by saying "export": 34.3 s H.264 + AAC (mean −18.9 dB), with captions, zoom, spotlight, label and the pixelated email in the file.
 
 ## Rules for this repo
 
@@ -106,8 +108,9 @@ node docs/media/src/screenshots.mjs docs/media        # README screenshots from 
   - **Never sent:** uploaded videos and their audio never leave the browser; captions are transcribed there.
   - **Sent to the model:**
     - note text, the pinned frame (JPEG, 640 px), and any frames Yappy asks for with `look` (480 px);
-    - for the command bar: the words and a text snapshot, plus the keyframe strip (one 320 px frame per scene) once a command needs to find something on screen. The bar says so the first time.
-    - caption text only when captions are changed by voice.
+    - for every command Yappy answers: the words, the last 3 commands, and a text snapshot (times, notes, edits, versions, and every caption line once captions exist).
+    - the keyframe strip (one 320 px frame per scene): first sent when a command needs to find something on screen (the bar says so), then with every later command Yappy answers about that video, so it's read from the cache.
+    - Exact commands handled by the parser send nothing. Keep the README's privacy table in step with this list.
   - **Before the call:** notes and commands are redacted (emails, key-like strings, phone numbers).
   - New blur boxes get a safety margin in `ops.ts`.
 - **What people say is data:** the prompts wrap it in `<note>`, `<answer>` and `<said>` tags; keep that when changing a prompt.
@@ -137,4 +140,4 @@ A 36 s HyperFrames film ("No Hands" teaser, marked as not official) with five pl
 - Render: `npx hyperframes@0.8.191 render --output renders/no-hands-sample.mp4`. Then make the web copy:
   `ffmpeg -i sample-video/renders/no-hands-sample.mp4 -vf scale=1280:-2 -c:v libx264 -preset slow -crf 21 -pix_fmt yuv420p -movflags +faststart -af loudnorm=I=-15:TP=-1.5:LRA=11 -ar 48000 -c:a aac -b:a 160k public/samples/no-hands-sample.mp4`
   Then the WebM copy: `ffmpeg -i public/samples/no-hands-sample.mp4 -c:v libvpx-vp9 -b:v 0 -crf 34 -deadline good -cpu-used 4 -row-mt 1 -c:a libopus -b:a 128k public/samples/no-hands-sample.webm`
-- If the sample changes, re-check the sample notes' `srcT`, `x` and `y` in `src/edit/sample.ts`, regenerate `no-hands-sample.words.json` (`whisper-cli -m ~/.cache/hyperframes/whisper/models/ggml-small.en.bin -f <16 kHz wav> -ml 1 -sow -oj`), and update the scene map in `evals/talk/cases.mjs`.
+- If the sample changes, re-check the sample notes' `srcT`, `x` and `y` in `src/edit/sample.ts`, regenerate `src/edit/no-hands-sample.words.json` (`whisper-cli -m ~/.cache/hyperframes/whisper/models/ggml-small.en.bin -f <16 kHz wav> -ml 1 -sow -oj`), and update the scene map in `evals/talk/cases.mjs`.

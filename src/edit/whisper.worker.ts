@@ -7,7 +7,9 @@ const MODEL = "Xenova/whisper-base"; // multilingual, so Hindi and Hinglish work
 
 type Chunk = { text: string; timestamp: [number, number | null] };
 type Transcriber = (audio: Float32Array, options: Record<string, unknown>) => Promise<{ text: string; chunks?: Chunk[] }>;
-export type WorkerMessage = { type: "status"; text: string } | { type: "done"; chunks: Chunk[] } | { type: "error"; message: string };
+// phase lets the page tell a stall from slow work: download and load report progress, transcribe doesn't.
+export type Phase = "download" | "load" | "transcribe";
+export type WorkerMessage = { type: "status"; phase: Phase; text: string } | { type: "done"; chunks: Chunk[] } | { type: "error"; message: string };
 
 const post = (m: WorkerMessage) => (self as unknown as { postMessage: (m: WorkerMessage) => void }).postMessage(m);
 let transcriber: Promise<Transcriber> | null = null;
@@ -24,7 +26,7 @@ async function cached(): Promise<boolean> {
 
 async function load(): Promise<Transcriber> {
   const fromCache = await cached();
-  post({ type: "status", text: fromCache ? "Loading the speech model" : "Getting the speech model, once" });
+  post({ type: "status", phase: fromCache ? "load" : "download", text: fromCache ? "Loading the speech model" : "Getting the speech model, once" });
   const { pipeline } = await import(/* @vite-ignore */ LIB);
   // The model's files download side by side; show one figure for all of them.
   const files = new Map<string, { loaded: number; total: number }>();
@@ -35,7 +37,7 @@ async function load(): Promise<Transcriber> {
       if (fromCache || p.status !== "progress" || !p.file || !p.total) return;
       files.set(p.file, { loaded: p.loaded ?? 0, total: p.total });
       const all = [...files.values()].reduce((a, f) => ({ loaded: a.loaded + f.loaded, total: a.total + f.total }), { loaded: 0, total: 0 });
-      post({ type: "status", text: `Getting the speech model, once: ${Math.round((100 * all.loaded) / all.total)}% of ${Math.round(all.total / 1e6)} MB` });
+      post({ type: "status", phase: "download", text: `Getting the speech model, once: ${Math.round((100 * all.loaded) / all.total)}% of ${Math.round(all.total / 1e6)} MB` });
     },
   }) as Promise<Transcriber>;
 }
@@ -50,7 +52,7 @@ self.addEventListener("message", async (e: MessageEvent<{ audio: Float32Array }>
       transcriber = null;
       throw new Error(`Couldn't load the speech model (${err instanceof Error ? err.message : err}). Check the connection and try again.`);
     }
-    post({ type: "status", text: "Transcribing in the background" });
+    post({ type: "status", phase: "transcribe", text: "Transcribing in the background" });
     const long = { chunk_length_s: 30, stride_length_s: 5 };
     let out: { text: string; chunks?: Chunk[] };
     try {

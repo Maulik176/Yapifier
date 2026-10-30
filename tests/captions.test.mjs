@@ -43,7 +43,7 @@ test("lines break after a sentence, a pause, or seven words", () => {
 });
 
 test("the sample's voiceover makes 15 lines, and none runs past 3.2 seconds", () => {
-  const cues = C.wordsToCues(JSON.parse(readFileSync("public/samples/no-hands-sample.words.json", "utf8")));
+  const cues = C.wordsToCues(JSON.parse(readFileSync("src/edit/no-hands-sample.words.json", "utf8")));
   assert.equal(cues.length, 15);
   assert.ok(cues.every((c) => c.end - c.start <= 3.2 + 1e-9));
   assert.ok(!cues.some((c) => /music/i.test(c.text)));

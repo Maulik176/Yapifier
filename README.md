@@ -70,7 +70,7 @@ Press **/** (or click the bar under the video), hold Fn and say anything. Exact 
 | *"how long is the video now?"* | an answer, no change |
 | *"make the background blue"* | Yappy says it can't recolour footage and offers what it can do |
 
-It's checked against **109 phrases** people might say, including Hinglish, several steps at once, unclear requests and things it can't do: Yappy gets **107 right**, in a median of 3 seconds (see [Numbers](#numbers)).
+A test set of **113 phrases** people might say (Hinglish, several steps at once, unclear requests, things it can't do) checks how Yappy *interprets* each one: whether it picks the right editor actions, not whether the finished edit is perfect. It picks the right ones for **112**, in a median of 2.7 seconds (see [Numbers](#numbers)).
 
 ## Captions
 
@@ -175,10 +175,11 @@ Yapifier never changes the pixels inside your footage: every edit is laid over i
 | Other frames | | only the ones Yappy asks to see with `look`, at 480 px |
 | Box tracking | ✓ runs locally | only the result ("unchanged from 30.8 s to 32.3 s") |
 | Your note text | | ✓ (emails, key-like strings and phone numbers are redacted first) |
-| A spoken command | | the words, and a short text summary of the edit (times, notes, edits, versions); never frames |
-| Finding things on screen | | one 320 px frame per scene, only once a command needs to find something; the bar says so the first time |
+| An exact command (*"pause"*, *"go to 0:42"*, *"undo"*, *"export v2"*) | ✓ handled in your browser | nothing |
+| A spoken command that Yappy answers | | the words, the last few commands, and a text summary of the edit: times, notes, edits, versions and, once you have captions, their lines |
+| Finding things on screen | | one 320 px frame per scene of the original video. They're first sent when a command needs to find something (the bar says so), and from then on they go with every command Yappy answers about that video |
 | Audio, for captions | ✓ transcribed on your machine | never |
-| Caption text | | only when you change captions by voice (a fix or a translation) |
+| Caption text | | once captions exist, their lines are part of that text summary for every command Yappy answers, not only caption fixes |
 | Your project | ✓ autosaved locally | |
 
 Yappy's AI runs through a third-party model provider's API, which receives only what's in the right-hand column. What you say is treated as data, not instructions: it reaches the model inside `<note>` or `<said>` tags with a prompt that says so. The API has per-visitor and daily limits.
@@ -215,7 +216,7 @@ npm run dev        # http://localhost:5173 (the API runs inside the dev server)
 
 `npm run build` type-checks and builds for production, and `npm test` runs the unit tests. On Vercel, set `ANTHROPIC_API_KEY` in the project's environment variables; `api/apply.ts` and `api/talk.ts` serve the same handlers.
 
-`node evals/talk/run.mjs` runs the command bar's 109-phrase test set against the live API and prints accuracy, speed and cost (about $0.60 a run).
+`node evals/talk/run.mjs` runs the command bar's 113-phrase test set against the live API and prints how many phrases it interprets correctly, speed and cost (about $0.60 a run).
 
 ## Numbers
 
@@ -231,13 +232,14 @@ Measured on the sample with its five notes (cut, zoom, spotlight, blur, label), 
 | Blur coverage after fitting | 30.49–32.66 s (padding covers the fade) |
 | Export | real time: a 34-second edit takes about 34 seconds |
 
-**The command bar,** measured on Oct 30, 2026 against 109 phrases on the sample (`evals/talk`):
+**The command bar,** measured on Oct 30, 2026 against my own test set of 113 phrases on the sample (`evals/talk`). It measures interpretation (did Yappy choose the right editor actions?), not finished edits; those run through the same apply step as notes, and the export is checked below.
 
 | | |
 |---|---|
-| Right | 107 of 109; both misses were things found on screen, landing about half a second before their scene |
-| Handled instantly in the browser, no AI call | 25 of 109 |
-| Speed when Yappy answers | median 3.0 s, 90% within 4.0 s |
+| Interpreted correctly | 112 of 113. The miss: *"play from where the keyboard shows up"* starts at 0:00, about 2 s before the keyboard appears |
+| Paused finds | land on a frame that shows the thing: *"go to where the prize is shown"* → 0:27.7, the ₹1,00,000 slide |
+| Handled instantly in the browser, no AI call | 25 of 113 |
+| Speed when Yappy answers | median 2.7 s, 90% within 4.1 s |
 | Cost | about 0.7¢ per command sent to Yappy |
 | A smaller, cheaper model | 92 of 99, but asked to blur the email it blurred the words "client email" instead, so Yappy stays on the stronger one |
 
@@ -248,6 +250,9 @@ Measured on the sample with its five notes (cut, zoom, spotlight, blur, label), 
 | First time in a browser | downloads the speech model once (about 80 MB) |
 | After that | captioned in 13–18 s, all in the browser |
 | Playback while it works | no main-thread task over 50 ms (before the background thread: one 12.4 s freeze) |
+| If it stalls | loading that shows no progress for a minute, or transcribing past its time limit, stops with a clear message; click CC to try again, or click it while it works to stop |
+
+**An exported video, checked frame by frame:** the sample with its five notes applied and captions on, saved by saying *"export"*: 34.3 s of H.264 video with AAC sound (mean −18.9 dB), with the captions, the zoom, the spotlight, the *Free to enter* label and the pixelated email all in the file.
 
 <details>
 <summary><b>Under the hood</b></summary>
@@ -270,7 +275,7 @@ Measured on the sample with its five notes (cut, zoom, spotlight, blur, label), 
 | `src/save.ts` | autosave in IndexedDB |
 | `server/apply.ts`, `api/apply.ts` | the agent step for notes, and its Vercel wrapper |
 | `server/talk.ts`, `api/talk.ts` | the command bar's agent step, and its Vercel wrapper |
-| `tests/`, `evals/talk/` | unit tests (`npm test`) and the command bar's 109-phrase test set |
+| `tests/`, `evals/talk/` | unit tests (`npm test`) and the command bar's 113-phrase test set |
 | `sample-video/` | the HyperFrames project that renders the sample |
 | `docs/media/` | README images; `src/` has the screenshot script (`node docs/media/src/screenshots.mjs docs/media`) and the banner and diagram sources (`sh docs/media/src/render.sh`) |
 </details>
@@ -285,7 +290,7 @@ Solo, in about a week, and mostly by voice. I dictated the specs, reviews and de
 - **Tools run where the video is.** Tracking and frame grabs happen in the browser, so the file never uploads and Yappy sees only what it asks for.
 - **Say what was really done.** Results shown on a note are worked out from the final edits; uncertainty is labelled ("suggested range… check it").
 - **Correction is part of the product.** An almost-right edit should take one drag, not another prompt.
-- **People say anything, so measure it.** The command bar began as a list of phrases, and real phrasing broke it within minutes. Now Yappy works out what you meant, and a 109-phrase test set checks every change for accuracy, speed and cost.
+- **People say anything, so measure it.** The command bar began as a list of phrases, and real phrasing broke it within minutes. Now Yappy works out what you meant, and a 113-phrase test set checks every change for how well it understands, how fast, and at what cost.
 - **Never stall the video.** Heavy work (transcription, tracking) runs off the main thread or in short steps, so playback stays smooth while it happens.
 
 The later features each landed as their own pull request with tests and the eval numbers: [voice commands](https://github.com/Maulik176/Yapifier/pull/1) and [captions](https://github.com/Maulik176/Yapifier/pull/2).
@@ -303,7 +308,7 @@ The later features each landed as their own pull request with tests and the eval
 
 - **Tracking follows a fixed box, not a moving object.** It tells you how long the content inside a box stays as it is. Scrolling or moving content ends the edit early; check it, and widen the box or the times by hand. Real object tracking is next.
 - **Export is real time** and needs Chrome or Edge with the tab in front.
-- **Finding things on screen** uses one frame per scene, so it can land a fraction of a second early.
+- **Finding things on screen** works from one frame per scene. Paused finds land on a frame that shows the thing; *"play from…"* can start a moment before it appears.
 - **Captions on uploads** need a one-time 80 MB download per browser, and the transcriber can mishear names and Hinglish (it wrote "lack" for "lakh"); fix those by voice or by hand. Turning captions off removes them; *"undo"* brings them back.
 - **Rate limits live in each server instance**, not across all of them; the AI provider account's spend limit is the hard cap.
 - Tested on Chrome on macOS, mostly with the sample video; not yet on Safari, Windows or 4K footage.
