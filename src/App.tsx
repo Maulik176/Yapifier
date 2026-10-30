@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CommandBar, { type CommandResult } from "./components/CommandBar";
 import EditHandles, { isSpatial } from "./components/EditHandles";
 import ExportDialog from "./components/ExportDialog";
@@ -105,6 +105,7 @@ export default function App() {
   const stripRef = useRef<Keyframe[]>([]); // the video's keyframes, once Yappy has needed them
   const recentRef = useRef<Exchange[]>([]); // the last few commands, so "no, the other one" makes sense
   const [captioning, setCaptioning] = useState<string | null>(null); // making captions: what it's doing now
+  const [toast, setToast] = useState<{ text: string; detail?: string; id: number } | null>(null); // a short message over the video
 
   useEffect(() => {
     void loadProject().then((p) => p && setSaved(p));
@@ -551,8 +552,9 @@ export default function App() {
   versionsRef.current = versions;
   const addCaptions = async (lang?: string) => {
     if (!source || captioning) return;
-    setCaptioning(source.isSample ? "Adding captions" : "Transcribing in your browser");
+    setCaptioning(source.isSample ? "Adding captions" : "Transcribing in the background");
     setError(null);
+    if (!source.isSample) showToast("Making captions in the background", "Keep watching: they appear on their own when ready");
     try {
       const words: Word[] = source.isSample ? await (await fetch(SAMPLE.words)).json() : await transcribe(source.url, setCaptioning);
       const cues = wordsToCues(words);
@@ -560,9 +562,13 @@ export default function App() {
       const all = versionsRef.current;
       const last = all[all.length - 1];
       const n = last.n + 1;
-      setVersions([...all, { n, edits: [...last.edits.filter((e) => e.kind !== "captions"), makeCaptions(cues)], changes: [{ noteId: "", label: `Captions added (${cues.length} lines)` }] }]);
-      setViewing(n);
-      setRedo([]);
+      // A low-priority update: the video keeps its frames while the editor takes in the new version.
+      startTransition(() => {
+        setVersions([...all, { n, edits: [...last.edits.filter((e) => e.kind !== "captions"), makeCaptions(cues)], changes: [{ noteId: "", label: `Captions added (${cues.length} lines)` }] }]);
+        setViewing(n);
+        setRedo([]);
+      });
+      showToast("Captions added", `${cues.length} lines · click CC to style or fix them`);
       if (lang) {
         await new Promise((ready) => setTimeout(ready, 50)); // let the editor show the new version first
         await askYappyRef.current(`Translate every caption line to ${lang}.`, false);
@@ -572,6 +578,13 @@ export default function App() {
     } finally {
       setCaptioning(null);
     }
+  };
+
+  // A short message over the video that fades out by itself.
+  const showToast = (text: string, detail?: string) => {
+    const id = Date.now();
+    setToast({ text, detail, id });
+    setTimeout(() => setToast((t) => (t?.id === id ? null : t)), 2400);
   };
 
   // The captions as a subtitle file, timed to the version on screen.
@@ -1056,6 +1069,12 @@ export default function App() {
                 />
               )}
               {peeking && <div className="stage-banner">Original footage · let go to see your edit</div>}
+              {toast && (
+                <div key={toast.id} className="toast" role="status">
+                  <b>{toast.text}</b>
+                  {toast.detail && <span>{toast.detail}</span>}
+                </div>
+              )}
             </Stage>
             <div className="transport">
               <button className="play" onClick={togglePlay} aria-label={ui.playing ? "Pause" : "Play"}>
