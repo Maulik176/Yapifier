@@ -245,7 +245,8 @@ export async function handleApply(request: Request): Promise<Response> {
       type: "text",
       text:
         `Video: ${source.duration.toFixed(2)} s, ${source.width}x${source.height}.\n` +
-        `Current edits:\n${edits.length ? edits.map((e) => `- ${e.id}: ${describe(e)} ${JSON.stringify(e)}`).join("\n") : "(none)"}`,
+        // Captions are made and changed from the command bar, so only their summary comes here.
+      `Current edits:\n${edits.length ? edits.map((e) => `- ${e.id}: ${describe(e)} ${e.kind === "captions" ? "(captions; not changed with ops)" : JSON.stringify(e)}`).join("\n") : "(none)"}`,
     },
   ];
   for (const n of notes) {

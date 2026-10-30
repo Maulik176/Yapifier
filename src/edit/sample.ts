@@ -5,6 +5,9 @@
 export const SAMPLE = {
   url: "/samples/no-hands-sample.mp4",
   webm: "/samples/no-hands-sample.webm",
+  // Words of the voiceover with their timing, transcribed ahead of time so the
+  // sample's captions need no model download. Uploads are transcribed in the browser.
+  words: "/samples/no-hands-sample.words.json",
   name: "Sample: No Hands challenge teaser (36 s)",
 };
 

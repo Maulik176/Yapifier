@@ -1,7 +1,8 @@
 // Paints one output frame: the video (zoomed if asked) plus every overlay
 // active at this source moment, or a title card during a title hold.
+import { cueAt, wordsOf } from "./captions";
 import { spring } from "./timeline";
-import type { Callout, Edit, Title } from "./types";
+import type { Callout, Captions, Edit, Title } from "./types";
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -129,6 +130,73 @@ function drawCallout(ctx: Ctx, W: number, H: number, c: Callout, px: number, py:
   ctx.restore();
 }
 
+// The line being said, styled. Bold lights up the word being said in ember;
+// clean sits on an ink pill; minimal is plain text with a shadow.
+function drawCaptions(ctx: Ctx, W: number, H: number, c: Captions, t: number) {
+  const cue = cueAt(c, t);
+  if (!cue) return;
+  const words = wordsOf(cue);
+  const bold = c.style === "bold";
+  const maxW = W * (bold ? 0.8 : 0.86);
+  let fs = Math.round(H * (bold ? 0.062 : c.style === "clean" ? 0.044 : 0.04) * c.size);
+  const weight = bold ? 800 : c.style === "clean" ? 700 : 600;
+  // Wrap into lines; shrink until it fits in two.
+  let lines: { text: string; w: number; i: number }[][] = [];
+  for (let tries = 0; tries < 4; tries++) {
+    ctx.font = `${weight} ${fs}px ${FONT}`;
+    const space = ctx.measureText(" ").width;
+    lines = [[]];
+    let width = 0;
+    words.forEach((w, i) => {
+      const ww = ctx.measureText(w.text).width;
+      if (width && width + space + ww > maxW) {
+        lines.push([]);
+        width = 0;
+      }
+      lines[lines.length - 1].push({ text: w.text, w: ww, i });
+      width += (width ? space : 0) + ww;
+    });
+    if (lines.length <= 2) break;
+    fs = Math.round(fs * 0.85);
+  }
+  ctx.font = `${weight} ${fs}px ${FONT}`;
+  const space = ctx.measureText(" ").width;
+  const lh = fs * 1.22;
+  const blockH = lh * lines.length;
+  const top = c.position === "top" ? H * 0.08 : c.position === "middle" ? H * 0.5 - blockH / 2 : H * 0.9 - blockH;
+  const now = words.findIndex((w) => t >= w.start && t < w.end);
+  ctx.save();
+  ctx.textBaseline = "middle";
+  ctx.lineJoin = "round";
+  lines.forEach((line, li) => {
+    const lw = line.reduce((n, w) => n + w.w, 0) + space * (line.length - 1);
+    let x = (W - lw) / 2;
+    const y = top + lh * li + lh / 2;
+    if (c.style === "clean") {
+      const pad = fs * 0.4;
+      ctx.fillStyle = "rgba(26,26,26,0.8)";
+      ctx.beginPath();
+      ctx.roundRect(x - pad, y - lh / 2, lw + pad * 2, lh, fs * 0.3);
+      ctx.fill();
+    }
+    for (const w of line) {
+      if (bold) {
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = fs * 0.18;
+        ctx.strokeText(w.text, x, y);
+        ctx.fillStyle = w.i === now ? EMBER : "#ffffff";
+      } else {
+        ctx.shadowColor = c.style === "minimal" ? "rgba(0,0,0,0.85)" : "transparent";
+        ctx.shadowBlur = fs * 0.3;
+        ctx.fillStyle = "#ffffff";
+      }
+      ctx.fillText(w.text, x, y);
+      x += w.w + space;
+    }
+  });
+  ctx.restore();
+}
+
 export interface FrameState {
   srcT: number;
   title?: { edit: Title; local: number };
@@ -208,6 +276,10 @@ export function renderFrame(ctx: Ctx, W: number, H: number, video: HTMLVideoElem
   }
 
   for (const c of active(edits, "callout", t)) drawCallout(ctx, W, H, c, ox(c.x), oy(c.y), envelope(t, c.start, c.end, 0.25));
+
+  // Captions sit on top of everything, outside the zoom.
+  const captions = edits.find((e): e is Captions => e.kind === "captions");
+  if (captions) drawCaptions(ctx, W, H, captions, t);
 }
 
 // A click on the (possibly zoomed) output frame, as a point in the source frame.

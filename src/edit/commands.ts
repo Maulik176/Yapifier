@@ -4,7 +4,7 @@
 // commands. Flow writes what you said with capitals and punctuation, so
 // everything is matched loosely.
 import { describe } from "./ops.js";
-import type { Edit, Note } from "./types.js";
+import type { CaptionPosition, CaptionStyle, Edit, Note } from "./types.js";
 
 export type VersionRef = number | "latest" | "current";
 // time is on the edited timeline's clock; src is in video seconds (from Yappy).
@@ -24,6 +24,8 @@ export type Command =
   | { kind: "original" } // a look at the untouched footage
   | { kind: "remove"; what: string; ids?: string[] }
   | { kind: "note"; text: string; at?: number; now?: boolean } // at: video seconds; now: apply it at once
+  // add: transcribe (lang: then translate to it); style; rewrite: replace lines by number (fixes, translation)
+  | { kind: "captions"; op: "add" | "remove" | "style" | "rewrite"; lang?: string; style?: CaptionStyle; position?: CaptionPosition; size?: number; lines?: { n: number; text: string }[] }
   | { kind: "help" };
 
 export const COMMAND_EXAMPLES = ["go to 0:42", "play from where it shows the prize", "blur the email", "apply the third note", "undo", "export v3"];
@@ -98,6 +100,8 @@ function parseOne(t: string): Command | null {
   if (/^redo(?: (?:that|it))?$/.test(t)) return { kind: "redo" };
   if (/^(?:compare|before and after|show (?:me )?(?:the )?(?:original|before)(?: footage| video)?)$/.test(t)) return { kind: "original" };
   if (/^(?:from the top|start from the top|play from the top|start again|play again)$/.test(t)) return { kind: "seek", to: { edge: "start" }, play: true };
+  if (/^(?:(?:add|turn on|show|generate|make|create|put on|switch on)(?: some| the)? (?:captions?|subtitles?|subs)|(?:captions?|subtitles?) on)$/.test(t)) return { kind: "captions", op: "add" };
+  if (/^(?:(?:remove|delete|turn off|hide|switch off|take off|get rid of)(?: the)? (?:captions?|subtitles?|subs)|(?:captions?|subtitles?) off)$/.test(t)) return { kind: "captions", op: "remove" };
 
   let m = t.match(/^(?:export|download|render)(?: (.+?))?(?: as (?:an? )?(?:mp4|webm|video|file))?$/);
   if (m) {
@@ -183,6 +187,7 @@ const KIND_WORDS: Record<Edit["kind"], string> = {
   freeze: "freeze frozen hold",
   title: "title card intro heading",
   volume: "volume mute muted sound audio",
+  captions: "captions caption subtitles subtitle subs",
 };
 
 const stem = (w: string) => (w.length > 4 ? w.replace(/(?:ing|ed|es|s)$/, "") : w);

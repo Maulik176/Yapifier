@@ -64,7 +64,8 @@ function toVideo(fx, clock) {
 }
 const here = (fx) => toVideo(fx, fx.clock);
 
-const blank = { t: -1, clock: false, play: false, by: 0, version: -1, ids: [], text: "" };
+const noCaptions = { op: "", lang: "", style: "", position: "", size: -1, lines: [] };
+const blank = { t: -1, clock: false, play: false, by: 0, version: -1, ids: [], text: "", captions: noCaptions };
 // What the browser's parser would do, as Yappy's action shape.
 function localAction(c, fx) {
   const version = (v) => (typeof v === "number" ? v : v === "latest" ? 0 : -1);
@@ -88,6 +89,8 @@ function localAction(c, fx) {
       return { ...blank, do: c.kind, version: version(c.version) };
     case "note":
       return { ...blank, do: "note", text: c.text };
+    case "captions":
+      return { ...blank, do: "captions", captions: { ...noCaptions, op: c.op, lang: c.lang ?? "" } };
     case "help":
       return null;
     default:
@@ -168,6 +171,19 @@ function matches(spec, a, fx, seeks) {
     case "edit":
     case "note":
       return (!spec.text || spec.text.test(a.text)) && (!spec.place || within(videoOf(a, fx), spec.place) || seeks.some((v) => within(v, spec.place)));
+    case "captions": {
+      const c = a.captions ?? {};
+      const cap = fx.edits.find((e) => e.kind === "captions");
+      return (
+        c.op === spec.op &&
+        (!spec.lines || sameSet((c.lines ?? []).map((l) => l.n), spec.lines)) &&
+        (!spec.text || (c.lines ?? []).some((l) => spec.text.test(l.text))) &&
+        (!spec.lang || spec.lang.test(c.lang ?? "")) &&
+        (!spec.style || c.style === spec.style) &&
+        (!spec.position || c.position === spec.position) &&
+        (!spec.bigger || (c.size > (cap?.size ?? 1)))
+      );
+    }
     default:
       return true;
   }
@@ -203,6 +219,7 @@ function show(r) {
     if (a.do === "apply" || a.do === "remove") return `${a.do} [${a.ids.join(",")}]`;
     if (["view", "restore", "export"].includes(a.do)) return `${a.do} ${a.version}`;
     if (a.do === "edit" || a.do === "note") return `${a.do}@${a.t} “${a.text.slice(0, 50)}”`;
+    if (a.do === "captions") return `captions ${a.captions.op}${a.captions.lang ? ` ${a.captions.lang}` : ""}${a.captions.style ? ` ${a.captions.style}` : ""}${a.captions.position ? ` ${a.captions.position}` : ""}${a.captions.size > 0 ? ` ×${a.captions.size}` : ""}${a.captions.lines.length ? ` lines ${a.captions.lines.map((l) => l.n).join(",")}` : ""}`;
     return a.do;
   });
   return [acts.join(" → "), r.question && `? ${r.question}`, r.reply && `“${r.reply.slice(0, 60)}”`].filter(Boolean).join(" | ");

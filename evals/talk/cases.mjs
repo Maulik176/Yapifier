@@ -14,6 +14,7 @@
 //   { do: "view" | "restore" | "export", version }
 //   { do: "edit" | "note", text: /re/, place: [lo, hi] }  place: its time, or a seek before it
 //   { do: "play" | "pause" | "undo" | "redo" | "original" }
+//   { do: "captions", op, lines: [n…], text: /re/, lang: /re/, style, position, bigger }
 // A case passes when it matches `expect`, any list in `anyOf`, or (with
 // `question: true` allowed) when Yappy asks a question instead. `none: true`
 // means nothing may be changed or applied (a reply is fine).
@@ -61,11 +62,22 @@ const edited = (extra = {}) => ({
   ...extra,
 });
 
+// The sample's caption lines, as the app makes them from the voiceover.
+const CUES = [
+  [2.42, 3.62, "You type all day,"], [3.62, 6.1, "prompts docs messages."], [6.1, 7.54, "What if you didn't have to?"],
+  [9.92, 11.18, "This is no hands,"], [11.18, 12.66, "the Whisper Flow Challenge."], [13.64, 15.39, "Build a tool that fixes a problem"],
+  [15.39, 17.27, "in your own work and build it"], [17.27, 17.9, "by voice."], [17.9, 21.02, "Two weeks, 16th to 30th October."],
+  [21.02, 22.54, "Judges score the problem,"], [22.54, 23.76, "how you used Whisper,"], [23.76, 25.36, "whether it works in your demo."],
+  [26.26, 28.52, "Three winners take one lakh rupees each."], [30.12, 31.02, "Hold the key, say it,"], [31.02, 32.08, "ship it."],
+].map(([start, end, text]) => ({ start, end, text }));
+const CAPTIONS = { id: "cc1", kind: "captions", start: 2.42, end: 32.08, cues: CUES, style: "bold", position: "bottom", size: 1, lang: "" };
+
 export const FIXTURES = {
   fresh: plain(12),
   notes: { ...plain(12), notes: SAMPLE_NOTES.map((n) => ({ ...n, status: "pending" })) },
   edited: edited(),
   selected: edited({ selected: "b1" }),
+  captioned: { ...plain(12), latest: 2, viewing: 2, versions: [{ n: 1, label: "" }, { n: 2, label: "Captions added (15 lines)" }], edits: [CAPTIONS] },
   // v3 took the zoom out again.
   three: edited({
     viewing: 3,
@@ -110,7 +122,7 @@ export const CASES = [
   { cat: "find", fx: "fresh", said: "Take me to where it says fix your own work.", expect: [{ do: "seek", video: [13.7, 18.1] }] },
   { cat: "find", fx: "fresh", said: "Where's the email address?", expect: [{ do: "seek", video: REGISTER }] },
   { cat: "find", fx: "fresh", said: "Show me the register button.", expect: [{ do: "seek", video: REGISTER }] },
-  { cat: "find", fx: "fresh", said: "Go to the dates slide.", expect: [{ do: "seek", video: [17.9, 21.1] }] },
+  { cat: "find", fx: "fresh", said: "Go to the dates slide.", expect: [{ do: "seek", video: [17.7, 21.1] }] }, // the 16 tile is in by 17.8
   { cat: "find", fx: "fresh", said: "Play from where the keyboard shows up.", expect: [{ do: "seek", video: [1.5, 9.5], play: true }] },
   { cat: "find", fx: "fresh", said: "Go to the end card.", expect: [{ do: "seek", video: END }] },
   { cat: "find", fx: "fresh", said: "Jump to the release notes part.", expect: [{ do: "seek", video: [1.5, 9.5] }] },
@@ -204,6 +216,18 @@ export const CASES = [
   { cat: "multi", fx: "notes", said: "Apply the notes and then export.", expect: [{ do: "apply", ids: "all" }, { do: "export" }] },
   { cat: "multi", fx: "edited", said: "Undo that and play from the start.", expect: [{ do: "undo" }, { do: "seek", video: [0, 2.1], play: true }], anyOf: [[{ do: "undo" }, { do: "seek", video: [0, 2.1] }, { do: "play" }]] },
   { cat: "multi", fx: "edited", said: "Remove the zoom and show me the original.", expect: [{ do: "remove", ids: ["z1"] }, { do: "original" }], anyOf: [[{ do: "remove", ids: ["z1"] }, { do: "view", version: 1 }]] },
+
+  // Captions.
+  { cat: "captions", fx: "fresh", said: "Add captions.", expect: [{ do: "captions", op: "add" }] },
+  { cat: "captions", fx: "fresh", said: "Add English subtitles please.", expect: [{ do: "captions", op: "add" }] },
+  { cat: "captions", fx: "fresh", said: "Hindi mein captions daal do.", expect: [{ do: "captions", op: "add", lang: /hindi/i }] },
+  { cat: "captions", fx: "captioned", said: "The captions say Whisper, it should be Wispr.", expect: [{ do: "captions", op: "rewrite", lines: [5, 11], text: /wispr/i }] },
+  { cat: "captions", fx: "captioned", said: "Translate the captions to Hindi.", expect: [{ do: "captions", op: "rewrite", lines: CUES.map((_, i) => i + 1), lang: /hindi|^hi$/i }] },
+  { cat: "captions", fx: "captioned", said: "Make the captions bigger.", expect: [{ do: "captions", op: "style", bigger: true }] },
+  { cat: "captions", fx: "captioned", said: "Put the captions at the top.", expect: [{ do: "captions", op: "style", position: "top" }] },
+  { cat: "captions", fx: "captioned", said: "Use the clean caption style, the one with the dark box.", expect: [{ do: "captions", op: "style", style: "clean" }] },
+  { cat: "captions", fx: "captioned", said: "Line three should say: What if you didn't have to type?", expect: [{ do: "captions", op: "rewrite", lines: [3], text: /type\?/i }] },
+  { cat: "captions", fx: "captioned", said: "Turn off the subtitles.", expect: [{ do: "captions", op: "remove" }] },
 
   // Follow-ups that lean on what was just said.
   { cat: "context", fx: "fresh", recent: [{ said: "Go to the prize amount.", did: "At 0:28.9 · the ₹1,00,000 slide" }], said: "Now zoom in on it.", expect: [{ do: "edit", text: /zoom/i, place: PRIZE }] },

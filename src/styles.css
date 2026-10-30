@@ -340,3 +340,7 @@ summary.agent-head { cursor: pointer; }
 .exporting { position: relative; overflow: hidden; }
 .exporting > span:last-child { position: relative; }
 .export-bar { position: absolute; left: 0; top: 0; bottom: 0; background: var(--lav); opacity: 0.7; transition: width 0.25s linear; }
+/* Captions in the inspector: every line, fixable by hand. */
+.caption-lines { display: grid; gap: 4px; max-height: 260px; overflow-y: auto; padding-right: 4px; }
+.caption-line .field { gap: 2px; }
+.caption-line.now .field-label { color: var(--accent-text); font-weight: 700; }
