@@ -17,7 +17,8 @@ You pause any video, click the spot, hold Fn and say the change with Wispr Flow.
 - **Shipped after submission, as pull requests:**
   - PR #1, *Talk to the timeline* (the command bar and `/api/talk`): **merged** 30 Oct and checked on production.
   - PR #2, *Captions* (Whisper in the browser, changed by voice): **merged** 30 Oct.
-  - A docs PR (`docs/readme-v2`): README and this file.
+  - PR #3, docs: README and this file: **merged** 30 Oct.
+  - PR #4, *Exports save themselves*: a finished export (and "Download .srt") goes straight to Downloads with a toast; the panel link stays as "Download again". Check `gh pr view 4` for whether it's merged.
 - **Dropped on purpose:** *Reframe for social* (9:16, 1:1, 4:5) and *Publish directly* (YouTube, LinkedIn, Slack). Maulik ended the project at captions. If they come back after judging:
   - **Publish:** YouTube uploads from an unverified Google API project are locked to private until Google audits it. LinkedIn and Slack can't take a browser upload directly and Vercel functions cap a request body at 4.5 MB, so the video would need temporary storage (Vercel Blob) in between. Maulik has to create each developer app himself.
   - **Reframe:** the research notes are in the session history: Premiere Auto Reframe (slower/default/faster), CapCut, OpusClip layouts (fit, split, fill), and safe zones for Reels and Shorts.
