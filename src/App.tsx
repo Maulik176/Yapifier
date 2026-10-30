@@ -515,6 +515,18 @@ export default function App() {
     if (next) tweak(next);
   };
 
+  // A finished file goes straight to the browser's Downloads (saying "export v3"
+  // should end with the file on disk, not another click); the link stays to save it again.
+  const deliver = (blob: Blob, name: string) => {
+    const url = URL.createObjectURL(blob);
+    setDownload({ url, name });
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    showToast("Saved to your Downloads", name);
+  };
+
   // Export any version in the background: it records from its own hidden player,
   // so you can keep watching, editing and applying notes meanwhile.
   const doExport = async (n: number) => {
@@ -535,7 +547,7 @@ export default function App() {
         ctrl.signal,
       );
       const base = source.name.replace(/\.[^.]+$/, "").replace(/^Sample: /, "").replace(/\s*\(.*?\)/g, "").replace(/[^\w-]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase();
-      setDownload({ url: URL.createObjectURL(blob), name: `${base}-yapified-${version.n === 1 ? "original" : `v${version.n}`}.${ext}` });
+      deliver(blob, `${base}-yapified-${version.n === 1 ? "original" : `v${version.n}`}.${ext}`);
     } catch (e) {
       if (!ctrl.signal.aborted) setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -593,7 +605,7 @@ export default function App() {
     const srt = toSrt(shown.edits, source.duration);
     if (!srt) return;
     const base = source.name.replace(/\.[^.]+$/, "").replace(/^Sample: /, "").replace(/\s*\(.*?\)/g, "").replace(/[^\w-]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase();
-    setDownload({ url: URL.createObjectURL(new Blob([srt], { type: "application/x-subrip" })), name: `${base}-${shown.n === 1 ? "original" : `v${shown.n}`}.srt` });
+    deliver(new Blob([srt], { type: "application/x-subrip" }), `${base}-${shown.n === 1 ? "original" : `v${shown.n}`}.srt`);
   };
 
   // Hold O (or the Original button) to see the untouched footage at this moment.
@@ -1194,8 +1206,8 @@ export default function App() {
               )}
               {error && <p className="error">{error}</p>}
               {download && (
-                <a className="download" href={download.url} download={download.name}>
-                  ⬇ Download {download.name}
+                <a className="download" href={download.url} download={download.name} title="It's in your Downloads already; this saves another copy">
+                  ⬇ Download again: {download.name}
                 </a>
               )}
             </div>
