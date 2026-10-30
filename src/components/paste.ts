@@ -4,7 +4,7 @@
 // brought no text at all (the caller says so instead of silently doing nothing).
 import type { ClipboardEvent } from "react";
 
-export function takePaste(e: ClipboardEvent<HTMLTextAreaElement>): { next: string; caret: number } | null {
+export function takePaste(e: ClipboardEvent<HTMLTextAreaElement | HTMLInputElement>): { next: string; caret: number } | null {
   let incoming = e.clipboardData.getData("text/plain");
   if (!incoming.trim()) {
     const html = e.clipboardData.getData("text/html");
@@ -13,8 +13,8 @@ export function takePaste(e: ClipboardEvent<HTMLTextAreaElement>): { next: strin
   e.preventDefault();
   if (!incoming.trim()) return null;
   const el = e.currentTarget;
-  const start = el.selectionStart;
-  return { next: el.value.slice(0, start) + incoming + el.value.slice(el.selectionEnd), caret: start + incoming.length };
+  const start = el.selectionStart ?? el.value.length;
+  return { next: el.value.slice(0, start) + incoming + el.value.slice(el.selectionEnd ?? start), caret: start + incoming.length };
 }
 
 // Put the caret back after React has written the new value.

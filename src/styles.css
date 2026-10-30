@@ -159,6 +159,18 @@ a { color: var(--accent-text); }
 .clock { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 15px; }
 .viewing { color: var(--warn); font-weight: 600; font-size: 13px; }
 .keys { margin-left: auto; font-size: 12px; display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+/* Talk to the timeline: the command bar Flow types into. */
+.command-bar { display: grid; gap: 5px; }
+.command-field { display: flex; align-items: center; gap: 10px; padding: 5px 8px 5px 14px; border: 2px solid var(--line); border-radius: 999px; background: var(--panel); cursor: text; }
+.command-field:focus-within { outline: 3px solid var(--lav); outline-offset: 0; }
+.command-field svg { width: 18px; height: 18px; flex: none; color: var(--muted); }
+.command-field:focus-within svg { color: var(--text); }
+.command-field input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 14px; padding: 5px 0; outline: none; text-overflow: ellipsis; }
+.command-field input::placeholder { color: var(--muted); }
+.command-result { margin: 0 6px; font-size: 12.5px; min-height: 1.5em; overflow-wrap: anywhere; }
+.command-miss { color: var(--warn); }
+.command-pending { color: var(--accent-text); font-weight: 600; }
+.command-choices { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 4px; }
 @media (max-width: 700px) { .keys { display: none; } }
 
 .timeline { position: relative; border-radius: var(--r-md); background: var(--panel); border: 2px solid var(--line); padding: 0; cursor: pointer; touch-action: none; user-select: none; overflow: hidden; }

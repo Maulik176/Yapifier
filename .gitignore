@@ -13,3 +13,5 @@ sample-video/renders
 sample-video/.hyperframes
 sample-video/.thumbnails
 sample-video/.waveform-cache
+evals/talk/.cache
+evals/talk/results
