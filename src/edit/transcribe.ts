@@ -11,6 +11,17 @@ type Transcriber = (audio: Float32Array, options: Record<string, unknown>) => Pr
 
 let transcriber: Promise<Transcriber> | null = null;
 
+// Whether the model's weights are already in the browser's cache (transformers.js
+// keeps them in Cache Storage), so loading them downloads nothing.
+async function cached(): Promise<boolean> {
+  try {
+    const urls = (await (await caches.open("transformers-cache")).keys()).map((r) => r.url).filter((u) => u.includes(MODEL));
+    return ["encoder_model_quantized.onnx", "decoder_model_merged_quantized.onnx"].every((f) => urls.some((u) => u.endsWith(f)));
+  } catch {
+    return false;
+  }
+}
+
 // The video's sound as 16 kHz mono, what Whisper listens to.
 async function audio16k(url: string): Promise<Float32Array> {
   const data = await (await fetch(url)).arrayBuffer();
@@ -34,6 +45,9 @@ export async function transcribe(url: string, onStatus: (text: string) => void):
   onStatus("Reading the sound");
   const audio = await audio16k(url);
   transcriber ??= (async () => {
+    // From an earlier visit the model is read from the browser's cache: say so, not "getting".
+    const fromCache = await cached();
+    onStatus(fromCache ? "Loading the speech model" : "Getting the speech model, once");
     const { pipeline } = await import(/* @vite-ignore */ LIB);
     // The model's files download side by side; show one figure for all of them.
     const files = new Map<string, { loaded: number; total: number }>();
@@ -41,7 +55,7 @@ export async function transcribe(url: string, onStatus: (text: string) => void):
       dtype: "q8",
       device: "wasm",
       progress_callback: (p: { status: string; file?: string; loaded?: number; total?: number }) => {
-        if (p.status !== "progress" || !p.file || !p.total) return;
+        if (fromCache || p.status !== "progress" || !p.file || !p.total) return;
         files.set(p.file, { loaded: p.loaded ?? 0, total: p.total });
         const all = [...files.values()].reduce((a, f) => ({ loaded: a.loaded + f.loaded, total: a.total + f.total }), { loaded: 0, total: 0 });
         onStatus(`Getting the speech model, once: ${Math.round((100 * all.loaded) / all.total)}% of ${Math.round(all.total / 1e6)} MB`);
