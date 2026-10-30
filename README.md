@@ -26,6 +26,8 @@ The fix is never hard to say. It's only hard to do. The four fixes in my demo vi
 
 **Yapifier makes saying it enough.** Pause where something's off, click the spot, hold Fn and say the fix with Wispr Flow. Yappy, the editing agent, looks at that frame, checks the footage around it like an editor scrubbing the timeline, and applies the edit. You watch the new version, fix anything that's almost right by hand, and export an MP4 with sound.
 
+And you don't have to click at all. Say *"go to where it shows ₹1 lakh"*, *"blur the email"*, *"add captions"* or *"export v3"* into the command bar, and Yappy finds the moment, makes the change, or asks you which one you meant.
+
 ## Watch the demo
 
 <p align="center">
@@ -47,6 +49,43 @@ The fix is never hard to say. It's only hard to do. The four fixes in my demo vi
   </tr>
 </table>
 
+## Talk to the timeline
+
+Press **/** (or click the bar under the video), hold Fn and say anything. Exact commands run instantly in your browser: *"pause"*, *"go to 0:42"*, *"back 5 seconds"*, *"undo"*, *"export v2"*. Everything else goes to Yappy, which reads a short summary of your edit and answers with editor actions.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/media/voice-find.png" alt="Said: Take me to where it shows ₹1 lakh. Yappy jumped to the ₹1,00,000 slide"><br><sub><b>Find things by what's on screen.</b> Yappy looks through one small frame per scene of your video and knows ₹1 lakh is the ₹1,00,000 on the slide.</sub></td>
+    <td width="50%"><img src="docs/media/voice-choices.png" alt="Said: Go to the No Hands part. Yappy asks which one, with two buttons: the title at 0:07.6 or the end card at 0:30.5"><br><sub><b>Unclear? It asks.</b> "No Hands" appears twice, so Yappy offers both as buttons instead of guessing.</sub></td>
+  </tr>
+</table>
+
+| Say | What happens |
+|---|---|
+| *"play from the part with the judging table"*, *"go to the next note"* | moves the playhead, by time, note, edit or what's on screen |
+| *"apply the third note"*, *"apply everything except the zoom"* | applies just those notes |
+| *"speed this up to 2x for 5 seconds"*, *"blur the email"* | makes the edit right away, no click needed |
+| *"remove the zoom and show me the original"* | several steps in one breath |
+| *"show v2"*, *"export the version before this one"*, *"restore the one with the zoom"* | versions and export |
+| *"how long is the video now?"* | an answer, no change |
+| *"make the background blue"* | Yappy says it can't recolour footage and offers what it can do |
+
+It's checked against **109 phrases** people might say, including Hinglish, several steps at once, unclear requests and things it can't do: Yappy gets **107 right**, in a median of 3 seconds (see [Numbers](#numbers)).
+
+## Captions
+
+<table>
+  <tr>
+    <td width="62%"><img src="docs/media/captions-fixed.png" alt="Bold captions on the video: the Wispr Flow Challenge, with Wispr lit up in orange as it's spoken. Below: The captions say Whisper, it should be Wispr. I changed Whisper to Wispr in captions 5 and 11"></td>
+    <td><b>Captions from the speech, fixed by voice.</b> Click <b>CC Add captions</b> or say <i>"add captions"</i>. The transcriber heard "Whisper Flow"; one sentence fixed every line with it.<br><br>Say <i>"translate the captions to Hindi"</i>, <i>"make them bigger"</i>, <i>"put them at the top"</i> or <i>"turn off the subtitles"</i>. Bold lights up each word as it's said; Clean and Minimal are calmer.</td>
+  </tr>
+</table>
+
+- **Transcribed in your browser.** Uploads go through Whisper running on your machine, in a background thread, so the video keeps playing smoothly while it listens and the captions just appear when they're ready. The audio never leaves the page. The first time, the browser downloads the speech model once (about 80 MB); after that it loads from the cache. The sample's captions are ready instantly.
+- **Part of the edit.** Captions are a version like any other edit: undo, compare, and burned into the export. Every line can be fixed by hand, and **Download .srt** gives a subtitle file timed to your edited video (lines move with your cuts).
+
+<p align="center"><img src="docs/media/captions-inspector.png" width="46%" alt="The captions inspector: Bold, Clean or Minimal; Bottom, Middle or Top; a size slider; every caption line editable; Download .srt"></p>
+
 ## Wispr Flow is the input
 
 Take Flow out and Yapifier is a timeline editor with a text box. Every instruction in it is something you say:
@@ -56,6 +95,8 @@ Take Flow out and Yapifier is a timeline editor with a text box. Every instructi
 | A note on a paused frame | the note box that opens where you click | Yappy turns it into edits: zoom, label, spotlight, blur, mask, cut, speed, freeze, title card, volume |
 | An answer to Yappy's question | the answer box on a note that "needs you" | the note goes back to Yappy with your answer and it finishes the job |
 | A follow-up | a new note on the same spot | *"make that label shorter"*, *"remove the zoom"*, *"keep the mask on for the whole video"* change the edits already there |
+| A command | the command bar (press **/**) | moves around, applies notes, makes edits, switches and exports versions |
+| A caption fix | the command bar | *"it says Whisper, it should be Wispr"* fixes every line with that word; *"translate them to Hindi"* rewrites them all |
 
 Speaking is faster than typing for this because a review comment is already a sentence. Pointing and talking together is what makes it precise: the click says *where* and *when*, the voice says *what*, and neither has to describe the other. Notes are often messy and sometimes in Hinglish; Yappy is prompted for exactly that.
 
@@ -121,6 +162,7 @@ Voice gets you 90% of the way. The last 10% shouldn't need another round trip.
 | Freeze | *"hold this frame for two seconds"* | the frame holds |
 | Title card | *"add an intro card that says No Hands"* | an animated card before, between or after |
 | Volume | *"mute this bit"* | quieter, louder or muted |
+| Captions | *"add captions"*, *"captions in Hindi"* | the speech as captions, with the spoken word lit up |
 
 Yapifier never changes the pixels inside your footage: every edit is laid over it or around it. Ask for something it can't do (*"make the button red"*) and Yappy says so and offers the closest thing it can.
 
@@ -133,9 +175,13 @@ Yapifier never changes the pixels inside your footage: every edit is laid over i
 | Other frames | | only the ones Yappy asks to see with `look`, at 480 px |
 | Box tracking | ✓ runs locally | only the result ("unchanged from 30.8 s to 32.3 s") |
 | Your note text | | ✓ (emails, key-like strings and phone numbers are redacted first) |
+| A spoken command | | the words, and a short text summary of the edit (times, notes, edits, versions); never frames |
+| Finding things on screen | | one 320 px frame per scene, only once a command needs to find something; the bar says so the first time |
+| Audio, for captions | ✓ transcribed on your machine | never |
+| Caption text | | only when you change captions by voice (a fix or a translation) |
 | Your project | ✓ autosaved locally | |
 
-Yappy's AI runs through a third-party model provider's API, which receives only what's in the right-hand column. Note text is treated as data, not instructions: it reaches the model inside `<note>` tags with a prompt that says so. The API has per-visitor and daily limits.
+Yappy's AI runs through a third-party model provider's API, which receives only what's in the right-hand column. What you say is treated as data, not instructions: it reaches the model inside `<note>` or `<said>` tags with a prompt that says so. The API has per-visitor and daily limits.
 
 ## Try it
 
@@ -144,6 +190,7 @@ Yappy's AI runs through a third-party model provider's API, which receives only 
 1. Press **Try it on a sample video**: a 36-second "No Hands" teaser made for this project, with five things left rough on purpose.
 2. Pause, click and speak a note with Wispr Flow (typing works too). No mic? Press **Load 5 sample notes**.
 3. Press **Apply** and watch Yappy work. Then select an edit to adjust it, hold **O** to compare, and **Export**.
+4. Press **/** and say (or type) *"take me to where it shows ₹1 lakh"*. Then click **CC Add captions** and say *"the captions say Whisper, it should be Wispr"*.
 
 Or upload your own recording: MP4 or WebM, up to 500 MB and 5 minutes.
 
@@ -166,7 +213,9 @@ echo "ANTHROPIC_API_KEY=sk-ant-..." > .env.local
 npm run dev        # http://localhost:5173 (the API runs inside the dev server)
 ```
 
-`npm run build` type-checks and builds for production. On Vercel, set `ANTHROPIC_API_KEY` in the project's environment variables; `api/apply.ts` serves the same handler.
+`npm run build` type-checks and builds for production, and `npm test` runs the unit tests. On Vercel, set `ANTHROPIC_API_KEY` in the project's environment variables; `api/apply.ts` and `api/talk.ts` serve the same handlers.
+
+`node evals/talk/run.mjs` runs the command bar's 109-phrase test set against the live API and prints accuracy, speed and cost (about $0.60 a run).
 
 ## Numbers
 
@@ -182,6 +231,24 @@ Measured on the sample with its five notes (cut, zoom, spotlight, blur, label), 
 | Blur coverage after fitting | 30.49–32.66 s (padding covers the fade) |
 | Export | real time: a 34-second edit takes about 34 seconds |
 
+**The command bar,** measured on Oct 30, 2026 against 109 phrases on the sample (`evals/talk`):
+
+| | |
+|---|---|
+| Right | 107 of 109; both misses were things found on screen, landing about half a second before their scene |
+| Handled instantly in the browser, no AI call | 25 of 109 |
+| Speed when Yappy answers | median 3.0 s, 90% within 4.0 s |
+| Cost | about 0.7¢ per command sent to Yappy |
+| A smaller, cheaper model | 92 of 99, but asked to blur the email it blurred the words "client email" instead, so Yappy stays on the stronger one |
+
+**Captions** on the 36-second sample, uploaded as a file:
+
+| | |
+|---|---|
+| First time in a browser | downloads the speech model once (about 80 MB) |
+| After that | captioned in 13–18 s, all in the browser |
+| Playback while it works | no main-thread task over 50 ms (before the background thread: one 12.4 s freeze) |
+
 <details>
 <summary><b>Under the hood</b></summary>
 
@@ -189,15 +256,21 @@ Measured on the sample with its five notes (cut, zoom, spotlight, blur, label), 
 
 **The agent loop.** [`server/apply.ts`](server/apply.ts) is one agent step per request. The browser sends the notes and the run so far; the server calls the model with the tools and a strict JSON schema for the answer, and returns either tool calls or results. Assistant turns go back unchanged and the first message is rebuilt identically each step, so the history only ever grows. [`src/edit/agent.ts`](src/edit/agent.ts) runs the tools; [`src/edit/track.ts`](src/edit/track.ts) reads frames and grayscale patches from a second hidden video. Only the first step of a run counts as an apply for rate limits; transcripts are validated (our tools only, text and JPEG results only, bounded size).
 
+**The command bar.** [`src/edit/commands.ts`](src/edit/commands.ts) parses exact commands in the browser; anything else goes to [`server/talk.ts`](server/talk.ts), one step per request, with a short text snapshot of the editor (never frames). Yappy answers with editor actions in a strict schema, which [`src/edit/talk.ts`](src/edit/talk.ts) turns into the same commands. To find something on screen it asks for a keyframe strip: [`src/edit/scenes.ts`](src/edit/scenes.ts) samples the video and keeps one frame per scene. The strip goes first in later requests, so it's read from the prompt cache.
+
+**Captions.** [`src/edit/whisper.worker.ts`](src/edit/whisper.worker.ts) runs Whisper (transformers.js, the model from Hugging Face) in a Web Worker; [`src/edit/captions.ts`](src/edit/captions.ts) groups the words into short lines, keeps word timing for the highlight, and writes the .srt through the edit's timeline. Captions are an edit kind, so versions, undo and export carry them, but the editing agent's ops can't create them.
+
 **Safety nets.** Media waits time out with a clear message (no hanging on a file the browser can't decode). A WebM copy of the sample serves browsers without H.264. More than eight notes go in batches. A run can be stopped and has a deadline; an export stops on recorder errors or stalled playback.
 
 | Path | What |
 |---|---|
 | `src/App.tsx` | the editor: notes, Apply, versions, undo, export, save and resume |
-| `src/edit/` | the engine: types, timeline, ops (validation), render, player, media, track, agent, sample |
-| `src/components/` | Landing, Stage, Timeline, Panels, Inspector, EditHandles, NotePopover |
+| `src/edit/` | the engine: types, timeline, ops (validation), render, player, media, track, agent, sample, commands, talk, scenes, captions, transcribe and the Whisper worker |
+| `src/components/` | Landing, Stage, Timeline, Panels, Inspector, EditHandles, NotePopover, CommandBar |
 | `src/save.ts` | autosave in IndexedDB |
-| `server/apply.ts`, `api/apply.ts` | the agent step and its Vercel wrapper |
+| `server/apply.ts`, `api/apply.ts` | the agent step for notes, and its Vercel wrapper |
+| `server/talk.ts`, `api/talk.ts` | the command bar's agent step, and its Vercel wrapper |
+| `tests/`, `evals/talk/` | unit tests (`npm test`) and the command bar's 109-phrase test set |
 | `sample-video/` | the HyperFrames project that renders the sample |
 | `docs/media/` | README images; `src/` has the screenshot script (`node docs/media/src/screenshots.mjs docs/media`) and the banner and diagram sources (`sh docs/media/src/render.sh`) |
 </details>
@@ -212,24 +285,33 @@ Solo, in about a week, and mostly by voice. I dictated the specs, reviews and de
 - **Tools run where the video is.** Tracking and frame grabs happen in the browser, so the file never uploads and Yappy sees only what it asks for.
 - **Say what was really done.** Results shown on a note are worked out from the final edits; uncertainty is labelled ("suggested range… check it").
 - **Correction is part of the product.** An almost-right edit should take one drag, not another prompt.
+- **People say anything, so measure it.** The command bar began as a list of phrases, and real phrasing broke it within minutes. Now Yappy works out what you meant, and a 109-phrase test set checks every change for accuracy, speed and cost.
+- **Never stall the video.** Heavy work (transcription, tracking) runs off the main thread or in short steps, so playback stays smooth while it happens.
+
+The later features each landed as their own pull request with tests and the eval numbers: [voice commands](https://github.com/Maulik176/Yapifier/pull/1) and [captions](https://github.com/Maulik176/Yapifier/pull/2).
 
 | Layer | Choice |
 |---|---|
-| Voice | Wispr Flow (dictation into the note and answer boxes) |
+| Voice | Wispr Flow (dictation into the note, answer and command boxes) |
+| Captions | Whisper in the browser (transformers.js, in a Web Worker) |
 | Agent | Yappy: a vision model with tool use and strict JSON output, called one step at a time from a serverless function |
 | App | React 19, TypeScript, Vite; canvas rendering, Web Audio, MediaRecorder, IndexedDB |
-| API and hosting | a Vercel function (`api/apply.ts`) and static hosting |
+| API and hosting | Vercel functions (`api/apply.ts`, `api/talk.ts`) and static hosting |
 | Sample video | HyperFrames (HTML rendered to video), Kokoro voice-over |
 
 ## Honest limits
 
 - **Tracking follows a fixed box, not a moving object.** It tells you how long the content inside a box stays as it is. Scrolling or moving content ends the edit early; check it, and widen the box or the times by hand. Real object tracking is next.
 - **Export is real time** and needs Chrome or Edge with the tab in front.
+- **Finding things on screen** uses one frame per scene, so it can land a fraction of a second early.
+- **Captions on uploads** need a one-time 80 MB download per browser, and the transcriber can mishear names and Hinglish (it wrote "lack" for "lakh"); fix those by voice or by hand. Turning captions off removes them; *"undo"* brings them back.
 - **Rate limits live in each server instance**, not across all of them; the AI provider account's spend limit is the hard cap.
 - Tested on Chrome on macOS, mostly with the sample video; not yet on Safari, Windows or 4K footage.
 
 ## What's next
 
+- Reframe for Reels, Shorts and LinkedIn (9:16, 1:1, 4:5), following where the action is on screen.
+- Publish straight to YouTube, LinkedIn or Slack from the export dialog.
 - Follow moving content (cursor, scrolling) for blurs and labels.
 - A shareable review link: reviewers leave spoken notes on your video, you apply them in one go.
 - Faster-than-real-time export.

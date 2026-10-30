@@ -150,10 +150,10 @@ try {
   await js(`window.scrollTo(0, 0); window.__yap.player.seek(24.2 - 2); return true;`);
   await sleep(900);
   await shot("compare-edited", await rect(".stage"));
-  await js(`window.dispatchEvent(new KeyboardEvent("keydown", { key: "o" })); return true;`);
+  await js(`document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "o", bubbles: true })); return true;`);
   await sleep(900);
   await shot("compare-original", await rect(".stage"));
-  await js(`window.dispatchEvent(new KeyboardEvent("keyup", { key: "o" })); return true;`);
+  await js(`document.body.dispatchEvent(new KeyboardEvent("keyup", { key: "o", bubbles: true })); return true;`);
   await sleep(500);
 
   // Correct by hand: select the blur, switch it to a solid mask, show the handles.
@@ -167,6 +167,46 @@ try {
   await js(`document.querySelector(".side .inspector").scrollIntoView({ block: "center" }); return true;`);
   await sleep(400);
   await shot("inspector", await rect(".side .inspector", 10));
+  await js(`document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); window.scrollTo(0, 0); return true;`);
+  await sleep(400);
+
+  // Talk to the timeline: say it into the command bar (a paste is how Flow types).
+  const say = async (text) => {
+    await js(`const el = document.querySelector('[aria-label="Command for the editor"]'); el.focus();
+      const dt = new DataTransfer(); dt.setData("text/plain", ${JSON.stringify(text)});
+      el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true })); return true;`);
+    await sleep(600);
+    await until(`!document.querySelector(".command-pending")`, 90000, `Yappy on “${text}”`);
+    await js(`window.__yap.player.pause(); document.activeElement.blur(); window.scrollTo(0, 0); return true;`);
+    await sleep(900);
+  };
+  // The stage down to the command bar's answer line.
+  const stageAndBar = () =>
+    js(`const a = document.querySelector(".stage").getBoundingClientRect(); const b = document.querySelector(".command-bar").getBoundingClientRect();
+      return { x: a.left - 8, y: a.top - 8, width: a.width + 16, height: b.bottom - a.top + 16 };`);
+  // A moment in video seconds, through the edit's cuts (the clock is the edited timeline).
+  const seekVideo = (t) =>
+    js(`const p = window.__yap.player; const s = p.segs.find((s) => s.type === "play" && ${t} >= s.src0 && ${t} < s.src1);
+      p.pause(); p.seek(s.out0 + (${t} - s.src0) / s.rate); return true;`);
+  await say("Go to the No Hands part.");
+  await shot("voice-choices", await stageAndBar());
+  await say("Take me to where it shows ₹1 lakh.");
+  await shot("voice-find", await stageAndBar());
+
+  // Captions: from the voiceover, then fixed by voice.
+  await click("button", "CC Add captions");
+  await until(`window.__yap.versions.at(-1).edits.some((e) => e.kind === "captions")`, 60000, "captions");
+  await say("The captions say Whisper, it should be Wispr.");
+  await seekVideo(11.6);
+  await sleep(1000);
+  await shot("captions-fixed", await stageAndBar());
+  await click("button", "CC Captions");
+  await sleep(1200);
+  await js(`document.querySelector(".side .inspector").scrollIntoView({ block: "center" }); return true;`);
+  await sleep(500);
+  await shot("captions-inspector", await rect(".side .inspector", 10));
+  await js(`document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); window.__yap.player.seek(29.4); return true;`);
+  await sleep(800);
 
   // Dark editor (the toggle, as a viewer would).
   await js(`document.querySelector(".theme-toggle").click(); return true;`);
