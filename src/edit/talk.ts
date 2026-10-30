@@ -5,7 +5,7 @@
 import { runTool, type ToolCall, type ToolResult } from "./agent.js";
 import type { Command } from "./commands.js";
 import type { Footage, Keyframe } from "./track.js";
-import type { Edit } from "./types.js";
+import type { CaptionPosition, CaptionStyle, Edit } from "./types.js";
 
 export interface TalkState {
   clock: number; // the playhead on the edited timeline
@@ -23,7 +23,7 @@ export interface TalkState {
 }
 
 export interface TalkAction {
-  do: "seek" | "play" | "pause" | "nudge" | "apply" | "undo" | "redo" | "view" | "restore" | "export" | "original" | "remove" | "note" | "edit";
+  do: "seek" | "play" | "pause" | "nudge" | "apply" | "undo" | "redo" | "view" | "restore" | "export" | "original" | "remove" | "note" | "edit" | "captions";
   t: number;
   clock: boolean;
   play: boolean;
@@ -31,6 +31,7 @@ export interface TalkAction {
   version: number;
   ids: string[];
   text: string;
+  captions: { op: "add" | "remove" | "style" | "rewrite" | ""; lang: string; style: CaptionStyle | ""; position: CaptionPosition | ""; size: number; lines: { n: number; text: string }[] };
 }
 
 export interface Usage {
@@ -125,6 +126,11 @@ export function toCommand(a: TalkAction): Command | null {
     case "note":
     case "edit":
       return a.text.trim() ? { kind: "note", text: a.text.trim(), at: a.t >= 0 ? a.t : undefined, now: a.do === "edit" } : null;
+    case "captions": {
+      const c = a.captions;
+      if (!c?.op) return null;
+      return { kind: "captions", op: c.op, lang: c.lang || undefined, style: c.style || undefined, position: c.position || undefined, size: c.size > 0 ? c.size : undefined, lines: c.lines?.length ? c.lines : undefined };
+    }
     default:
       return { kind: a.do };
   }

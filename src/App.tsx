@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CommandBar, { type CommandResult } from "./components/CommandBar";
 import EditHandles, { isSpatial } from "./components/EditHandles";
 import ExportDialog from "./components/ExportDialog";
@@ -10,6 +10,7 @@ import { AgentLog, EditsList, NotesPanel, VersionsPanel } from "./components/Pan
 import Stage from "./components/Stage";
 import Timeline from "./components/Timeline";
 import { runTool, type ToolCall } from "./edit/agent";
+import { makeCaptions, rewrite, toSrt, wordsToCues } from "./edit/captions";
 import { COMMAND_EXAMPLES, findMoment, isExact, parseCommands, type Command, type VersionRef } from "./edit/commands";
 import { exportFormat, MAX_UPLOAD_MB, mediaEvent, readSource, recordExport, seekTo, snapshot, thumbnails, waveform } from "./edit/media";
 import { applyOps, describe, type Op } from "./edit/ops";
@@ -19,7 +20,8 @@ import { SAMPLE, SAMPLE_NOTES, sampleUrl } from "./edit/sample";
 import { formatTime, locate, srcToOut } from "./edit/timeline";
 import { talk, toCommand, type Exchange, type TalkState } from "./edit/talk";
 import { Footage, fitToFootage, type Keyframe } from "./edit/track";
-import type { AgentStep, Change, Edit, Note, Source, Version } from "./edit/types";
+import { transcribe } from "./edit/transcribe";
+import type { AgentStep, Captions, Change, Edit, Note, Source, Version, Word } from "./edit/types";
 import { clearProject, loadProject, loadVideo, saveProject, saveVideo, type SavedProject } from "./save";
 import { useTheme } from "./theme";
 
@@ -102,6 +104,8 @@ export default function App() {
   const talkJob = useRef<AbortController | null>(null); // Yappy working out a spoken command
   const stripRef = useRef<Keyframe[]>([]); // the video's keyframes, once Yappy has needed them
   const recentRef = useRef<Exchange[]>([]); // the last few commands, so "no, the other one" makes sense
+  const [captioning, setCaptioning] = useState<string | null>(null); // making captions: what it's doing now
+  const [toast, setToast] = useState<{ text: string; detail?: string; id: number } | null>(null); // a short message over the video
 
   useEffect(() => {
     void loadProject().then((p) => p && setSaved(p));
@@ -540,6 +544,58 @@ export default function App() {
     }
   };
 
+  // Captions: the sample's words were transcribed ahead of time; an upload is
+  // transcribed here in the browser. They land as a new version on top of the
+  // latest one (it may have moved on while Whisper was listening), and a
+  // language asked for is handed to Yappy to translate the lines.
+  const versionsRef = useRef(versions);
+  versionsRef.current = versions;
+  const addCaptions = async (lang?: string) => {
+    if (!source || captioning) return;
+    setCaptioning(source.isSample ? "Adding captions" : "Transcribing in the background");
+    setError(null);
+    if (!source.isSample) showToast("Making captions in the background", "Keep watching: they appear on their own when ready");
+    try {
+      const words: Word[] = source.isSample ? await (await fetch(SAMPLE.words)).json() : await transcribe(source.url, setCaptioning);
+      const cues = wordsToCues(words);
+      if (!cues.length) throw new Error("No speech was found to caption.");
+      const all = versionsRef.current;
+      const last = all[all.length - 1];
+      const n = last.n + 1;
+      // A low-priority update: the video keeps its frames while the editor takes in the new version.
+      startTransition(() => {
+        setVersions([...all, { n, edits: [...last.edits.filter((e) => e.kind !== "captions"), makeCaptions(cues)], changes: [{ noteId: "", label: `Captions added (${cues.length} lines)` }] }]);
+        setViewing(n);
+        setRedo([]);
+      });
+      showToast("Captions added", `${cues.length} lines · click CC to style or fix them`);
+      if (lang) {
+        await new Promise((ready) => setTimeout(ready, 50)); // let the editor show the new version first
+        await askYappyRef.current(`Translate every caption line to ${lang}.`, false);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCaptioning(null);
+    }
+  };
+
+  // A short message over the video that fades out by itself.
+  const showToast = (text: string, detail?: string) => {
+    const id = Date.now();
+    setToast({ text, detail, id });
+    setTimeout(() => setToast((t) => (t?.id === id ? null : t)), 2400);
+  };
+
+  // The captions as a subtitle file, timed to the version on screen.
+  const downloadSrt = () => {
+    if (!source) return;
+    const srt = toSrt(shown.edits, source.duration);
+    if (!srt) return;
+    const base = source.name.replace(/\.[^.]+$/, "").replace(/^Sample: /, "").replace(/\s*\(.*?\)/g, "").replace(/[^\w-]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase();
+    setDownload({ url: URL.createObjectURL(new Blob([srt], { type: "application/x-subrip" })), name: `${base}-${shown.n === 1 ? "original" : `v${shown.n}`}.srt` });
+  };
+
   // Hold O (or the Original button) to see the untouched footage at this moment.
   // Only the picture swaps: the edited timeline keeps running (or stays paused)
   // underneath, so letting go never moves the playhead or stops playback.
@@ -684,6 +740,30 @@ export default function App() {
         removeEdit(target.id);
         return ok(`Removed: ${describe(target)}`);
       }
+      case "captions": {
+        if (!isLatest) return fail(`Switch to v${latest.n} to change captions.`);
+        const cap = latest.edits.find((e): e is Captions => e.kind === "captions");
+        const swap = (next: Captions, label: string) => commit(latest.edits.map((e) => (e === cap ? next : e)), label);
+        if (c.op === "add") {
+          if (cap && !c.lang) return ok("Captions are already on. Say how to change them, or click CC.");
+          if (cap) return ok(`Translating the captions to ${c.lang}…`, askYappyRef.current(`Translate every caption line to ${c.lang}.`, false));
+          if (captioning) return fail("Captions are already being made.");
+          return ok(source.isSample ? "Adding captions…" : "Transcribing in your browser…", addCaptions(c.lang));
+        }
+        if (!cap) return fail("There are no captions yet. Say “add captions”.");
+        if (c.op === "remove") {
+          commit(latest.edits.filter((e) => e !== cap), "Removed captions");
+          return ok("Captions removed");
+        }
+        if (c.op === "style") {
+          const next = { ...cap, style: c.style ?? cap.style, position: c.position ?? cap.position, size: Math.round(Math.min(1.8, Math.max(0.6, c.size ?? cap.size)) * 10) / 10 };
+          swap(next, `Captions: ${next.style}, ${next.position}, ${Math.round(next.size * 100)}%`);
+          return ok(`Captions now ${next.style}, at the ${next.position}, ${Math.round(next.size * 100)}% size`);
+        }
+        if (!c.lines?.length) return fail("Say which caption lines to change.");
+        swap(rewrite(cap, c.lines, c.lang), c.lang && c.lang !== cap.lang ? `Captions in ${c.lang}` : `Captions: fixed ${c.lines.length} line${c.lines.length > 1 ? "s" : ""}`);
+        return ok(c.lang && c.lang !== cap.lang ? `Captions translated to ${c.lang}` : `Fixed ${c.lines.length} caption line${c.lines.length > 1 ? "s" : ""}`);
+      }
       case "note": {
         if (!isLatest) return fail(`Switch to v${latest.n} to ${c.now ? "make changes" : "leave notes"}.`);
         player.pause();
@@ -772,6 +852,9 @@ export default function App() {
     }
   };
 
+  const askYappyRef = useRef(askYappy);
+  askYappyRef.current = askYappy;
+
   // Exact commands run at once; everything else goes to Yappy.
   const runCommand = (said: string, spoken: boolean) => {
     const commands = parseCommands(said);
@@ -858,6 +941,8 @@ export default function App() {
       srcT={ui.srcT}
       inView={!("start" in selectedEdit) || (ui.srcT >= selectedEdit.start - 0.05 && ui.srcT <= selectedEdit.end + 0.05)}
       onAdjust={(a) => adjust(selectedEdit, a)}
+      onReplace={tweak}
+      onSrt={downloadSrt}
       onJump={() => pick(selectedEdit)}
       onClose={() => setSelected(null)}
     />
@@ -984,6 +1069,12 @@ export default function App() {
                 />
               )}
               {peeking && <div className="stage-banner">Original footage · let go to see your edit</div>}
+              {toast && (
+                <div key={toast.id} className="toast" role="status">
+                  <b>{toast.text}</b>
+                  {toast.detail && <span>{toast.detail}</span>}
+                </div>
+              )}
             </Stage>
             <div className="transport">
               <button className="play" onClick={togglePlay} aria-label={ui.playing ? "Pause" : "Play"}>
@@ -1006,6 +1097,20 @@ export default function App() {
                 title="Hold to see the original footage at this moment (or hold O)"
               >
                 ◐ Hold for original
+              </button>
+              <button
+                className="secondary small"
+                disabled={!!captioning || !!busy}
+                onClick={() => {
+                  const cap = latest.edits.find((e) => e.kind === "captions");
+                  if (cap) {
+                    if (!isLatest) setViewing(latest.n);
+                    pick(cap);
+                  } else void addCaptions();
+                }}
+                title={source.isSample ? "Captions from the voiceover" : "Captions from the speech, transcribed in your browser: the audio never leaves it"}
+              >
+                {captioning ? `${captioning}…` : latest.edits.some((e) => e.kind === "captions") ? "CC Captions" : "CC Add captions"}
               </button>
               <span className="clock">
                 {formatTime(ui.outT)} <span className="muted">/ {formatTime(length)}</span>

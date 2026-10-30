@@ -14,6 +14,7 @@ export const KIND_COLOR: Record<EditKind, string> = {
   freeze: "#9ccbe8",
   title: "#ffd98a",
   volume: "#5fb3a0",
+  captions: "#fffff7",
 };
 
 const NOTE_DOT: Record<Note["status"], string> = { pending: "#f0d7ff", applied: "--ok", question: "#ffa946", failed: "#e5624f" };

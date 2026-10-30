@@ -49,6 +49,8 @@ export function describe(e: Edit): string {
       return `Title card “${e.text}” (${e.duration}s) ${span}`;
     case "volume":
       return e.level === 0 ? `Mute ${span}` : `Volume ${Math.round(e.level * 100)}% for ${span}`;
+    case "captions":
+      return `Captions${e.lang ? ` in ${e.lang}` : ""}, ${e.cues.length} lines, ${e.style}`;
   }
 }
 

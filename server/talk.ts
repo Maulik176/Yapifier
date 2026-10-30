@@ -29,9 +29,9 @@ const NUM = { type: "number" };
 const ACTION_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["do", "t", "clock", "play", "by", "version", "ids", "text"],
+  required: ["do", "t", "clock", "play", "by", "version", "ids", "text", "captions"],
   properties: {
-    do: { type: "string", enum: ["seek", "play", "pause", "nudge", "apply", "undo", "redo", "view", "restore", "export", "original", "remove", "note", "edit"] },
+    do: { type: "string", enum: ["seek", "play", "pause", "nudge", "apply", "undo", "redo", "view", "restore", "export", "original", "remove", "note", "edit", "captions"] },
     t: { ...NUM, description: "seek, note, edit: a time in seconds; -1 = where the playhead is now." },
     clock: { type: "boolean", description: "seek: true when t is on the edited timeline's clock (a time the director said), false when t is in video seconds (a moment you found)." },
     play: { type: "boolean", description: "seek: start playing from there." },
@@ -39,6 +39,20 @@ const ACTION_SCHEMA = {
     version: { ...NUM, description: "view, restore, export: version number (1 = original); 0 = the latest; -1 = the one on screen." },
     ids: { type: "array", items: { type: "string" }, description: "apply: note ids ([] = every waiting note). remove: edit ids." },
     text: { type: "string", description: "note, edit: the instruction in the director's words, with any place or time made explicit." },
+    captions: {
+      type: "object",
+      additionalProperties: false,
+      required: ["op", "lang", "style", "position", "size", "lines"],
+      description: "captions only; for other actions: op \"\", lang \"\", style \"\", position \"\", size -1, lines [].",
+      properties: {
+        op: { type: "string", enum: ["add", "remove", "style", "rewrite", ""] },
+        lang: { type: "string", description: "The language's English name (\"Hindi\", not \"hi\"). add: a language to translate the new captions into, \"\" to keep them as spoken. rewrite: the language the lines are now in, when translating." },
+        style: { type: "string", enum: ["clean", "bold", "minimal", ""] },
+        position: { type: "string", enum: ["bottom", "middle", "top", ""] },
+        size: { ...NUM, description: "0.6–1.8, 1 = normal; -1 to leave it." },
+        lines: { type: "array", items: { type: "object", additionalProperties: false, required: ["n", "text"], properties: { n: NUM, text: { type: "string" } } } },
+      },
+    },
   },
 };
 
@@ -85,6 +99,7 @@ Actions (fill every field; -1, false, [] or "" where a field doesn't apply):
 - original: show the untouched footage for a moment, to compare.
 - remove: delete edits, by id ("remove the blur", "take out the zoom", "delete this" = the selected edit).
 - note: leave a note to apply later. Use it when they say "note", "remind me", "later", or are clearly listing several changes.
+- captions: captions of what's said in the video. add makes them from the speech ("add captions", "subtitles in English": lang is the language to translate into, "" as spoken). remove. style changes style (bold lights up each word, clean sits on a dark pill, minimal is plain), position or size ("bigger" is about 1.3). rewrite replaces lines by their number, keeping the timing: fix words they point out ("it says Whisper, it should be Wispr" fixes every line with that word), or translate ("translate the captions to Hindi": every line, in order, with lang set). The snapshot lists the lines when captions are on.
 - edit: make a change now ("speed this up 2x for 5 seconds", "blur the email", "add a title saying Welcome", "zoom in on the prize"). t is where it applies (video seconds; -1 = the playhead); text is the request in their words, with times made explicit when they gave them relative to now ("from 0:05 to 0:10"). The editor's agent does the edit, so don't work out boxes or numbers yourself.
 
 Several actions run in order: "go to the email and blur it" is seek, then edit. When they refer to something on screen that the notes and edits don't mention, call see_video (unless the keyframes are already above), find the scene and seek to where it starts (the keyframe's "scene from" time, or its own time when it has none), so playing from there shows it from the beginning. Call look only to settle between two nearby moments. A spoken amount can be written differently on screen (₹1 lakh = ₹1,00,000; 50k = 50,000).
@@ -149,6 +164,14 @@ export function describeState(s: TalkState): string {
     .slice(0, 120)
     .map((e) => `${clip(e.id, 40)}: ${clip(describe(e), 160)}`)
     .join("\n");
+  const captions = s.edits.find((e) => e.kind === "captions");
+  const lines =
+    captions?.kind === "captions"
+      ? `\nCaption lines (n. video time: text), ${captions.position}, size ${captions.size}:\n${captions.cues
+          .slice(0, 150)
+          .map((q, i) => `${i + 1}. ${secs(q.start)}–${secs(q.end)}: ${redact(clip(q.text, 160))}`)
+          .join("\n")}`
+      : "";
   const versions = s.versions
     .slice(-20)
     .map((v) => `v${v.n}${v.n === 1 ? " (original)" : `: ${clip(v.label, 100)}`}`)
@@ -158,7 +181,7 @@ export function describeState(s: TalkState): string {
     `Clock to video: ${map || "the same"}.`,
     `Viewing v${s.viewing}; the latest is v${s.latest}. Versions: ${versions}.`,
     `Notes (n. id at video time, status):\n${notes || "(none)"}`,
-    `Edits in the version on screen (video times):\n${edits || "(none)"}`,
+    `Edits in the version on screen (video times):\n${edits || "(none)"}${lines}`,
     `Selected edit: ${s.selected ? clip(s.selected, 40) : "none"}.`,
   ].join("\n");
 }
@@ -216,7 +239,8 @@ export async function handleTalk(request: Request): Promise<Response> {
   if (state.edits.length > 200 || state.notes.length > 200) return json(413, { error: "Too much for the demo." });
   const strip = Array.isArray(body.strip) ? body.strip.slice(0, MAX_STRIP).filter((f) => isJpeg(f?.jpeg)) : [];
   if (!validTranscript(transcript)) return json(400, { error: "Yappy lost track of that. Say it again." });
-  if (transcript.length >= MAX_ROUNDS * 2) return json(502, { error: "Yappy needed too many steps for that. Try saying it differently." });
+  // After the last tool round Yappy answers with what it has: no more tools.
+  const lastRound = transcript.length >= MAX_ROUNDS * 2;
 
   const ip = (request.headers.get("x-forwarded-for") ?? "unknown").split(",")[0].trim();
   const limited = rateLimited(ip, transcript.length === 0);
@@ -250,6 +274,7 @@ export async function handleTalk(request: Request): Promise<Response> {
       cache_control: { type: "ephemeral" },
       system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
       tools: TOOLS,
+      tool_choice: { type: lastRound ? "none" : "auto" },
       output_config: { effort: EFFORT, format: { type: "json_schema", schema: RESULT_SCHEMA } },
       messages: [{ role: "user", content }, ...transcript],
     });

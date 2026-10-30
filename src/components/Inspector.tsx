@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { rewrite } from "../edit/captions";
 import type { Op } from "../edit/ops";
 import { formatTime } from "../edit/timeline";
-import type { Edit } from "../edit/types";
+import type { CaptionPosition, CaptionStyle, Captions, Edit } from "../edit/types";
 import { KIND_COLOR } from "./Timeline";
 
 // Fields of an update op, plus the blur style, which isn't an op field.
@@ -17,6 +18,7 @@ const TITLE: Record<Edit["kind"], string> = {
   freeze: "Freeze frame",
   title: "Title card",
   volume: "Volume",
+  captions: "Captions",
 };
 
 const ON_VIDEO = new Set<Edit["kind"]>(["zoom", "callout", "highlight", "blur"]);
@@ -49,6 +51,51 @@ function Field({ label, value, type, onCommit, children }: { label: string; valu
   );
 }
 
+const STYLES: [CaptionStyle, string][] = [
+  ["bold", "Bold"],
+  ["clean", "Clean"],
+  ["minimal", "Minimal"],
+];
+const PLACES: [CaptionPosition, string][] = [
+  ["bottom", "Bottom"],
+  ["middle", "Middle"],
+  ["top", "Top"],
+];
+
+// Style, place and size, then every line to fix by hand, and the .srt file.
+function CaptionsFields({ edit, srcT, onReplace, onSrt }: { edit: Captions; srcT: number; onReplace: (next: Edit) => void; onSrt: () => void }) {
+  const now = edit.cues.findIndex((q) => srcT >= q.start && srcT <= q.end);
+  return (
+    <>
+      <div className="segmented" role="radiogroup" aria-label="Caption style">
+        {STYLES.map(([s, label]) => (
+          <button key={s} role="radio" aria-checked={edit.style === s} className={edit.style === s ? "on" : ""} onClick={() => onReplace({ ...edit, style: s })}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="segmented" role="radiogroup" aria-label="Caption position">
+        {PLACES.map(([p, label]) => (
+          <button key={p} role="radio" aria-checked={edit.position === p} className={edit.position === p ? "on" : ""} onClick={() => onReplace({ ...edit, position: p })}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <Slider label="Size" value={edit.size} min={0.6} max={1.8} step={0.1} show={(v) => `${Math.round(v * 100)}%`} onChange={(v) => onReplace({ ...edit, size: v })} />
+      <div className="caption-lines">
+        {edit.cues.map((q, i) => (
+          <div key={i} className={i === now ? "caption-line now" : "caption-line"}>
+            <Field label={formatTime(q.start)} type="text" value={q.text} onCommit={(v) => onReplace(rewrite(edit, [{ n: i + 1, text: v }]))} />
+          </div>
+        ))}
+      </div>
+      <button className="secondary small" onClick={onSrt} title="Captions as a subtitle file, timed to this version's edits">
+        Download .srt
+      </button>
+    </>
+  );
+}
+
 function Slider({ label, value, min, max, step, show, onChange }: { label: string; value: number; min: number; max: number; step: number; show: (v: number) => string; onChange: (v: number) => void }) {
   return (
     <label className="field">
@@ -65,6 +112,8 @@ export default function Inspector({
   srcT,
   inView,
   onAdjust,
+  onReplace,
+  onSrt,
   onJump,
   onClose,
 }: {
@@ -72,6 +121,8 @@ export default function Inspector({
   srcT: number; // the playhead, in source seconds
   inView: boolean; // the playhead is inside this edit, so its box can be dragged
   onAdjust: (a: Adjustment) => void;
+  onReplace: (next: Edit) => void; // captions change as a whole edit
+  onSrt: () => void;
   onJump: () => void;
   onClose: () => void;
 }) {
@@ -92,7 +143,9 @@ export default function Inspector({
         </button>
       </div>
 
-      {"start" in edit ? (
+      {edit.kind === "captions" ? (
+        <CaptionsFields edit={edit} srcT={srcT} onReplace={onReplace} onSrt={onSrt} />
+      ) : "start" in edit ? (
         <div className="field-row">
           <Field label="Start (s)" type="number" value={String(edit.start)} onCommit={(v) => onAdjust({ start: secs(v) })}>
             {now("start")}

@@ -2,7 +2,8 @@
 // entry in this list, laid over or around the source footage at play time.
 // Times are in source seconds. Positions are fractions of the frame (0..1).
 
-export type EditKind = "cut" | "speed" | "zoom" | "callout" | "highlight" | "blur" | "freeze" | "title" | "volume";
+// Captions come from transcription in the browser, never from the editor agent's ops, so they aren't in EDIT_KINDS.
+export type EditKind = "cut" | "speed" | "zoom" | "callout" | "highlight" | "blur" | "freeze" | "title" | "volume" | "captions";
 export const EDIT_KINDS: EditKind[] = ["cut", "speed", "zoom", "callout", "highlight", "blur", "freeze", "title", "volume"];
 
 interface Base {
@@ -22,7 +23,24 @@ export interface Freeze extends Base { kind: "freeze"; at: number; duration: num
 export interface Title extends Base { kind: "title"; at: number; duration: number; text: string; sub: string }
 export interface Volume extends Base { kind: "volume"; start: number; end: number; level: number }
 
-export type Edit = Cut | Speed | Zoom | Callout | Highlight | Blur | Freeze | Title | Volume;
+// Captions: the spoken words in lines (cues), each with its words' timing when
+// known, so the bold style can light up the word being said.
+export interface Word { start: number; end: number; text: string }
+export interface Cue { start: number; end: number; text: string; words?: Word[] }
+export type CaptionStyle = "clean" | "bold" | "minimal";
+export type CaptionPosition = "bottom" | "middle" | "top";
+export interface Captions extends Base {
+  kind: "captions";
+  start: number;
+  end: number;
+  cues: Cue[];
+  style: CaptionStyle;
+  position: CaptionPosition;
+  size: number; // 1 = normal
+  lang: string; // "" = as spoken
+}
+
+export type Edit = Cut | Speed | Zoom | Callout | Highlight | Blur | Freeze | Title | Volume | Captions;
 
 export interface Source {
   name: string;
