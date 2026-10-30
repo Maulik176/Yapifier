@@ -13,6 +13,7 @@ You pause any video, click the spot, hold Fn and say the change with Wispr Flow.
 npm run dev        # http://localhost:5173, serves /api/apply through the Vite middleware
 npm run typecheck  # tsc -b; delete tsconfig.tsbuildinfo afterwards (it's ignored)
 npm run build      # typecheck + production build into dist/
+node evals/talk/run.mjs   # command-bar eval: 99 utterances, accuracy, speed, cost (calls the API: ~$0.45 on Opus; TALK_MODEL=... to compare)
 ```
 
 ## Layout
@@ -26,12 +27,17 @@ npm run build      # typecheck + production build into dist/
   - `media.ts`: upload reading, filmstrip thumbnails, waveform, frame snapshots, real-time export (MediaRecorder, MP4 where supported).
   - `track.ts`: `Footage` (a second hidden `<video>` for reading original frames and grayscale patches) and box tracking. It estimates how long a **fixed box** looks unchanged; it does not follow moving content, so the UI calls its result a suggested range to check. `fitToFootage` only narrows **newly added** overlays whose op didn't set `exact` (timing the director asked for on purpose is kept as given).
   - `agent.ts`: runs the agent's `look` and `track` tool calls in the browser and builds the tool results.
+  - `commands.ts`: the command bar's own parser. Exact commands (`isExact`: play, pause, "go to 0:42", undo, "export v3"…) run at once with no model call; everything else goes to Yappy.
+  - `talk.ts`: asks `/api/talk` about anything else and runs its `see_video` (the keyframe strip) and `look` calls; `toCommand` turns Yappy's actions into commands.
+  - `scenes.ts`: splits sampled frames into scenes for the keyframe strip (`Footage.keyframes`); shared with the eval so both build the same strip.
   - `sample.ts`: the sample video (MP4, with a WebM copy for browsers without H.264) and its 5 sample notes. **Their coordinates must match what is on screen in the sample.**
-- `src/components/`: Landing (with the resume card), Stage (canvas + pins + note box), Timeline, Panels (notes, answer box, agent log, edits list, versions), NotePopover, Inspector (exact times, text, strength, blur style for the selected edit), EditHandles (drag and resize the selected edit on the video).
+- `src/components/`: Landing (with the resume card), Stage (canvas + pins + note box), Timeline, Panels (notes, answer box, agent log, edits list, versions), NotePopover, Inspector (exact times, text, strength, blur style for the selected edit), EditHandles (drag and resize the selected edit on the video), CommandBar (talk to the timeline: `/` focuses it, Flow's paste runs at once, Yappy's questions come back as choice buttons).
 - Export runs in the background (`recordExport` in `media.ts`): its own hidden video, player and canvas record a frozen copy of the chosen version, with the sound going to the recording only, so the editor stays fully usable. Stop cancels it; a hidden tab stalls it. Hold `O` (or the Original button) only swaps the picture to the untouched footage (`Player.showOriginal`); the edited timeline stays the clock.
 - Note and answer boxes take Flow's paste themselves (`src/components/paste.ts`): plain text, or the words out of rich text; a paste with no text shows a hint to press ⌘⌃V (Flow's "paste last transcript"). Flow restores your old clipboard ~0.5 s after pasting.
 - The stage only re-renders the editor when the clock moves, so a paused editor is idle.
 - `src/save.ts`: autosave of the project (and the uploaded video, when it fits) in IndexedDB; the landing page offers to resume it. Hand adjustments to one edit fold into a single version (`Version.tweak`).
+- `server/talk.ts`: the `/api/talk` handler. One step per request; the browser sends a short editor snapshot (never frames), the last 3 commands, and the keyframe strip once Yappy has asked for it (first in the message, so later commands read it from the cache). Logs token usage per step. Its own rate limits (`DAILY_TALK_CAP`).
+- `evals/talk/`: the command-bar test set (`cases.mjs`) and runner (`run.mjs`); results and ffmpeg frames go to ignored `results/` and `.cache/`.
 - `server/apply.ts`: the `/api/apply` handler, **one agent step per request** (prompt, tools, JSON schema, redaction, rate limits). The browser sends the run so far as `transcript` and must send assistant turns back unchanged (thinking blocks included); the first user message is rebuilt identically each step. Only the first step counts as an apply for rate limits. `api/apply.ts` is the Vercel wrapper; `vite.config.ts` mounts the same handler in dev.
 - `public/samples/no-hands-sample.mp4`: the judges' sample (720p web copy).
 - `sample-video/`: the HyperFrames project that makes the sample (see below).
@@ -40,10 +46,10 @@ npm run build      # typecheck + production build into dist/
 
 ## Rules for this repo
 
-- **Claude API:** official `@anthropic-ai/sdk`, model `claude-opus-5-5`, effort `low` (env `APPLY_MODEL`, `APPLY_EFFORT`), structured output via `output_config.format`, `fallbacks: "default"` with beta `server-side-fallback-2026-07-01`. The SDK is loaded lazily inside the handler.
+- **Claude API:** official `@anthropic-ai/sdk`, model `claude-opus-5-5`, effort `low` (env `APPLY_MODEL`, `APPLY_EFFORT`; `TALK_MODEL`, `TALK_EFFORT` for the command bar, where the Oct 30 eval had Opus 5.5 at 97/99 and Haiku 5.5 at 92/99 with wrong blur targets), structured output via `output_config.format`, `fallbacks: "default"` with beta `server-side-fallback-2026-07-01`. The SDK is loaded lazily inside the handler.
 - **Keys:** `ANTHROPIC_API_KEY` lives in `.env.local` for dev and in Vercel production env (sensitive). Never print, commit or paste it. `DAILY_APPLY_CAP` is optional.
 - **Server-side imports use explicit `.js` extensions** (`../src/edit/ops.js`). Vercel runs the function as ESM and breaks on extensionless relative imports.
-- **Privacy:** uploaded videos never leave the browser; only the note text, the pinned frame (JPEG, 640 px) and any frames Yappy asks for with `look` (480 px) go to the model. Notes are redacted (emails, key-like strings, phone numbers) before the call. New blur boxes get a safety margin in `ops.ts`.
+- **Privacy:** uploaded videos never leave the browser; only the note text, the pinned frame (JPEG, 640 px), any frames Yappy asks for with `look` (480 px) and, once a spoken command needs to find something on screen, the keyframe strip (one 320 px frame per scene) go to the model; the command bar says so the first time. Notes are redacted (emails, key-like strings, phone numbers) before the call. New blur boxes get a safety margin in `ops.ts`.
 - **Note text is data:** the prompt wraps it in `<note>`/`<answer>` tags; keep that when changing the prompt.
 - **Branding: the agent is Yappy.** Don't say or show that Yappy is Claude (or name the model or provider) in the app's UI, the README, the banner, diagrams or the demo. The provider shows up only where it must: code, the API key setup in "Run it locally", and how the project was built (Claude Code).
 - **No company assets in public:** don't put material from Maulik's employer or other brands into the app, the sample or the repo.

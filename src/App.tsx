@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import CommandBar, { type CommandResult } from "./components/CommandBar";
 import EditHandles, { isSpatial } from "./components/EditHandles";
 import ExportDialog from "./components/ExportDialog";
 import Inspector, { type Adjustment } from "./components/Inspector";
@@ -9,13 +10,15 @@ import { AgentLog, EditsList, NotesPanel, VersionsPanel } from "./components/Pan
 import Stage from "./components/Stage";
 import Timeline from "./components/Timeline";
 import { runTool, type ToolCall } from "./edit/agent";
+import { COMMAND_EXAMPLES, findMoment, isExact, parseCommands, type Command, type VersionRef } from "./edit/commands";
 import { exportFormat, MAX_UPLOAD_MB, mediaEvent, readSource, recordExport, seekTo, snapshot, thumbnails, waveform } from "./edit/media";
 import { applyOps, describe, type Op } from "./edit/ops";
 import { Player } from "./edit/player";
 import { toSource } from "./edit/render";
 import { SAMPLE, SAMPLE_NOTES, sampleUrl } from "./edit/sample";
-import { formatTime, srcToOut } from "./edit/timeline";
-import { Footage, fitToFootage } from "./edit/track";
+import { formatTime, locate, srcToOut } from "./edit/timeline";
+import { talk, toCommand, type Exchange, type TalkState } from "./edit/talk";
+import { Footage, fitToFootage, type Keyframe } from "./edit/track";
 import type { AgentStep, Change, Edit, Note, Source, Version } from "./edit/types";
 import { clearProject, loadProject, loadVideo, saveProject, saveVideo, type SavedProject } from "./save";
 import { useTheme } from "./theme";
@@ -93,6 +96,12 @@ export default function App() {
   const wide = useMedia(WIDE);
   const [peeking, setPeeking] = useState(false); // showing the original while O is held
   const [dialog, setDialog] = useState<"export" | "restart" | null>(null);
+  const commandRef = useRef<HTMLInputElement>(null);
+  const [command, setCommand] = useState<CommandResult | null>(null); // the last spoken or typed command and what it did
+  const peekTimer = useRef(0);
+  const talkJob = useRef<AbortController | null>(null); // Yappy working out a spoken command
+  const stripRef = useRef<Keyframe[]>([]); // the video's keyframes, once Yappy has needed them
+  const recentRef = useRef<Exchange[]>([]); // the last few commands, so "no, the other one" makes sense
 
   useEffect(() => {
     void loadProject().then((p) => p && setSaved(p));
@@ -149,6 +158,10 @@ export default function App() {
         setRedo([]);
         setPin(null);
         setDownload(null);
+        setCommand(null);
+        talkJob.current?.abort();
+        stripRef.current = [];
+        recentRef.current = [];
         setThumbs([]);
         setPeaks(null);
         setSource(src);
@@ -289,10 +302,11 @@ export default function App() {
   // Yappy, the editor agent: each request is one step. When Claude asks to look at
   // or track part of the video, the browser does it and sends the results back
   // with the next step, until Claude returns the edits.
-  const apply = useCallback(async () => {
-    if (!player || !source || !footage || !pending.length || busy) return;
+  const apply = useCallback(async (only?: Note[]) => {
+    const todo = only ?? pending;
+    if (!player || !source || !footage || !todo.length || busy) return;
     const started = performance.now();
-    const count = `${pending.length} note${pending.length > 1 ? "s" : ""}`;
+    const count = `${todo.length} note${todo.length > 1 ? "s" : ""}`;
     setBusy(`Applying ${count}…`);
     setError(null);
     const log: AgentStep[] = [];
@@ -309,7 +323,7 @@ export default function App() {
       // The server takes up to 8 notes per run, so bigger sets go in batches,
       // each one building on the edits the last one made.
       const batches: Note[][] = [];
-      for (let k = 0; k < pending.length; k += MAX_NOTES_PER_RUN) batches.push(pending.slice(k, k + MAX_NOTES_PER_RUN));
+      for (let k = 0; k < todo.length; k += MAX_NOTES_PER_RUN) batches.push(todo.slice(k, k + MAX_NOTES_PER_RUN));
       let edits: Edit[] = latest.edits;
       const changes: Change[] = [];
       const outcome = new Map<string, Pick<Note, "status" | "reply" | "question">>();
@@ -319,7 +333,8 @@ export default function App() {
         const request = {
           source: { duration: source.duration, width: source.width, height: source.height },
           edits,
-          notes: batch.map(({ id, srcT, x, y, text, frame, question, answer }) => ({ id, srcT, x, y, text, frame, question, answer })),
+          // A note said without clicking has no spot (-1); the agent finds what it means in the frame.
+          notes: batch.map(({ id, srcT, x, y, unpinned, text, frame, question, answer }) => ({ id, srcT, x: unpinned ? -1 : x, y: unpinned ? -1 : y, text, frame, question, answer })),
         };
         const transcript: unknown[] = [];
         let results: ApplyResult[] | null = null;
@@ -353,7 +368,7 @@ export default function App() {
       // on purpose are left exactly as Claude set them.
       const existing = new Set(latest.edits.map((e) => e.id));
       const fresh = new Set(edits.filter((e) => !existing.has(e.id) && !e.exact).map((e) => e.id));
-      const pinnedAt = new Map(pending.map((n) => [n.id, n.srcT]));
+      const pinnedAt = new Map(todo.map((n) => [n.id, n.srcT]));
       const fit = await fitToFootage(footage, edits, fresh, (e) => (e.noteId ? pinnedAt.get(e.noteId) : undefined));
       ctrl.signal.throwIfAborted();
       edits = fit.edits;
@@ -368,7 +383,7 @@ export default function App() {
       }
       step({ kind: "done", text: `Done in ${((performance.now() - started) / 1000).toFixed(1)} s`, detail: rounds ? `checked the video ${rounds === 1 ? "once" : `${rounds} times`}` : undefined });
       // Only the notes sent in this run; notes written while Yappy worked stay waiting.
-      const sent = new Set(pending.map((n) => n.id));
+      const sent = new Set(todo.map((n) => n.id));
       setNotes((all) => all.map((n) => (outcome.has(n.id) ? { ...n, ...outcome.get(n.id)! } : sent.has(n.id) ? { ...n, status: "failed", reply: "No answer came back for this note." } : n)));
       if (changes.length) {
         setRedo([]);
@@ -550,13 +565,251 @@ export default function App() {
     };
   }, [peek]);
 
-  // Keyboard: Space play/pause, N note at the centre, arrows seek, Cmd/Ctrl+Enter apply, hold O for the original.
+  // One command, from the parser or from Yappy: does it and says what it did,
+  // in a few words. `wait` is set when it started an apply that later commands
+  // should wait for ("blur the email, then export").
+  const execute = async (c: Command, spoken: boolean): Promise<{ ok: boolean; text: string; wait?: Promise<unknown> }> => {
+    if (!player || !source || !footage) return { ok: false, text: "Open a video first." };
+    const ok = (text: string, wait?: Promise<unknown>) => ({ ok: true, text, wait });
+    const fail = (text: string) => ({ ok: false, text });
+    const name = (n: number) => (n === 1 ? "the original" : `v${n}`);
+    const find = (ref: VersionRef) => (ref === "current" ? shown : ref === "latest" ? latest : versions.find((v) => v.n === ref));
+    const missing = (ref: VersionRef) => `There's no ${typeof ref === "number" ? `v${ref}` : "such version"}; the latest is v${latest.n}.`;
+    switch (c.kind) {
+      case "help":
+        return ok(`Say ${COMMAND_EXAMPLES.map((q) => `“${q}”`).join(", ")}, or just say what you want.`);
+      case "play":
+        setPin(null);
+        player.play();
+        return ok("Playing");
+      case "pause":
+        player.pause();
+        return ok(`Paused at ${formatTime(player.outT)}`);
+      case "nudge": {
+        const to = Math.max(0, Math.min(player.length, player.outT + c.by));
+        seek(to);
+        return ok(`${c.by < 0 ? "Back" : "Forward"} ${Math.abs(c.by)} s, at ${formatTime(to)}`);
+      }
+      case "seek": {
+        const to = c.to;
+        let outT: number;
+        let what = "";
+        if ("time" in to) {
+          outT = to.time;
+          if (to.time > player.length) what = ` (the video is ${formatTime(player.length)} long)`;
+        } else if ("src" in to) outT = srcToOut(player.segs, to.src);
+        else if ("here" in to) outT = player.outT;
+        else if ("edge" in to) outT = to.edge === "start" ? 0 : player.length;
+        else if ("step" in to) {
+          const times = (isLatest ? notes : []).map((n) => srcToOut(player.segs, n.srcT)).sort((a, b) => a - b);
+          const now = player.outT;
+          const t = to.step === "first" ? times[0] : to.step === "last" ? times[times.length - 1] : to.step === "next" ? times.find((x) => x > now + 0.05) : [...times].reverse().find((x) => x < now - 0.05);
+          if (t === undefined) return fail(times.length ? `There's no ${to.step} note.` : "There are no notes yet.");
+          outT = t;
+        } else {
+          const found = findMoment(to.what, isLatest ? notes : [], shown.edits);
+          if (!found) return fail(`Couldn't find “${to.what}” in your notes or edits.`);
+          // Playing from a moment starts a second early, so you see it arrive.
+          outT = srcToOut(player.segs, found.srcT) - (c.play ? 1 : 0);
+          what = ` · ${found.label}`;
+        }
+        const at = Math.max(0, Math.min(player.length, outT));
+        seek(at);
+        if (c.play) player.play();
+        return ok(`${c.play ? "Playing from" : "At"} ${formatTime(at)}${what}`);
+      }
+      case "apply": {
+        const todo = c.ids ? pending.filter((n) => c.ids!.includes(n.id)) : pending;
+        if (busy) return fail("Yappy is already working.");
+        if (!todo.length) return fail(c.ids ? "Those notes aren't waiting to be applied." : "No notes are waiting. Say what to change, or click the video to leave a note.");
+        return ok(`Applying ${todo.length} note${todo.length > 1 ? "s" : ""}…`, apply(c.ids ? todo : undefined));
+      }
+      case "undo":
+        if (busy) return fail("Wait for Yappy to finish first.");
+        if (versions.length < 2) return fail("Nothing to undo.");
+        undo();
+        return ok(`Undid v${latest.n}`);
+      case "redo": {
+        const last = redo[redo.length - 1];
+        if (busy) return fail("Wait for Yappy to finish first.");
+        if (!last) return fail("Nothing to redo.");
+        redoLast();
+        return ok(`Redid v${last.version.n}`);
+      }
+      case "view": {
+        const v = find(c.version);
+        if (!v) return fail(missing(c.version));
+        setViewing(v.n);
+        setSelected(null);
+        return ok(`Showing ${name(v.n)}`);
+      }
+      case "restore": {
+        const v = find(c.version);
+        if (!v) return fail(missing(c.version));
+        if (busy) return fail("Wait for Yappy to finish first.");
+        if (v.n === latest.n) return fail(`${name(v.n)} is already the latest.`);
+        restore(v.n);
+        return ok(`Restored ${name(v.n)} as v${latest.n + 1}`);
+      }
+      case "export": {
+        const v = find(c.version);
+        if (!v) return fail(missing(c.version));
+        if (!exportFormat()) return fail("Export needs Chrome or Edge.");
+        if (exporting) return fail("An export is already running.");
+        void doExport(v.n);
+        return ok(`Exporting ${name(v.n)} in the background`);
+      }
+      case "original":
+        if (!shown.edits.length) return fail("There are no edits yet, so this is the original.");
+        peek(true);
+        clearTimeout(peekTimer.current);
+        peekTimer.current = window.setTimeout(() => {
+          player.showOriginal = false;
+          setPeeking(false);
+        }, 3000);
+        return ok("Original footage for 3 seconds");
+      case "remove": {
+        if (!isLatest) return fail(`Switch to v${latest.n} to remove edits.`);
+        if (busy) return fail("Wait for Yappy to finish first.");
+        if (c.ids) {
+          const gone = latest.edits.filter((e) => c.ids!.includes(e.id));
+          if (!gone.length) return fail("Those edits aren't in this version.");
+          commit(latest.edits.filter((e) => !gone.includes(e)), gone.length === 1 ? `Removed: ${describe(gone[0])}` : `Removed ${gone.length} edits`);
+          setSelected(null);
+          return ok(gone.length === 1 ? `Removed: ${describe(gone[0])}` : `Removed ${gone.length} edits`);
+        }
+        const pointed = /^(?:this|it|that)(?: edit| one)?$|^(?:the )?selected(?: edit| one)?$/.test(c.what);
+        const target = pointed ? latest.edits.find((e) => e.id === selected) : findMoment(c.what, [], latest.edits)?.edit;
+        if (!target) return fail(pointed ? "Pick an edit first, or say which one: “remove the blur”." : `No edit matches “${c.what}”.`);
+        removeEdit(target.id);
+        return ok(`Removed: ${describe(target)}`);
+      }
+      case "note": {
+        if (!isLatest) return fail(`Switch to v${latest.n} to ${c.now ? "make changes" : "leave notes"}.`);
+        player.pause();
+        // Said without clicking, so there's no spot: the editor's agent finds what it means in the frame.
+        const here = locate(player.segs, player.outT).srcT;
+        const srcT = c.at !== undefined && Number.isFinite(c.at) ? Math.max(0, Math.min(source.duration, c.at)) : here;
+        const frame = Math.abs(srcT - here) < 0.1 && canvasRef.current ? snapshot(canvasRef.current) : await footage.frame(srcT, 640);
+        const note: Note = { id: newId(), outT: srcToOut(player.segs, srcT), srcT, x: 0.5, y: 0.5, unpinned: true, text: c.text, spoken, frame, author: "You", status: "pending" };
+        setNotes((all) => [...all, note]);
+        if (!c.now) return ok(`Note added at ${formatTime(note.outT)}. Say “apply” when you're ready.`);
+        if (busy) return ok("Added as a note; it'll wait until Yappy finishes the current apply.");
+        return ok(`Making the change at ${formatTime(note.outT)}…`, apply([note]));
+      }
+    }
+  };
+
+  // Always the latest render's execute, for commands that run after a wait.
+  const executeRef = useRef(execute);
+  executeRef.current = execute;
+
+  // Runs a list of commands in order, stopping at the first that can't be done.
+  // After an apply, the next command waits for it and for the editor to catch up.
+  const runAll = async (commands: Command[], spoken: boolean): Promise<{ ok: boolean; text: string }> => {
+    const done: string[] = [];
+    for (const [i, c] of commands.entries()) {
+      const r = await executeRef.current(c, spoken);
+      done.push(r.text);
+      if (!r.ok) return { ok: false, text: done.join(" · ") };
+      if (r.wait && i < commands.length - 1) {
+        await r.wait;
+        await new Promise((ready) => setTimeout(ready, 50));
+      }
+    }
+    return { ok: true, text: done.join(" · ") };
+  };
+
+  const remember = (said: string, did: string) => (recentRef.current = [...recentRef.current, { said, did }].slice(-3));
+
+  // The editor as Yappy sees it: a few numbers and lines, never the video.
+  const talkState = (): TalkState | null =>
+    player && source
+      ? {
+          clock: player.outT,
+          length: player.length,
+          playing: player.playing,
+          duration: source.duration,
+          viewing: shown.n,
+          latest: latest.n,
+          selected: isLatest ? selected : null,
+          versions: versions.map((v) => ({ n: v.n, label: v.changes.map((c) => c.label).join("; ") })),
+          notes: (isLatest ? notes : []).map(({ id, srcT, text, status }) => ({ id, at: srcT, text, status })),
+          edits: shown.edits,
+          map: player.segs.map((s) => (s.type === "play" ? { clock: [s.out0, s.out1], video: [s.src0, s.src1], rate: s.rate } : { clock: [s.out0, s.out1], hold: s.edit.kind, at: s.src })),
+        }
+      : null;
+
+  // Anything the parser can't be sure of goes to Yappy, which answers with commands.
+  const askYappy = async (said: string, spoken: boolean) => {
+    const state = talkState();
+    if (!state || !footage) return;
+    talkJob.current?.abort();
+    const ctrl = new AbortController();
+    talkJob.current = ctrl;
+    const status = (text: string) => !ctrl.signal.aborted && setCommand({ said, ok: true, text: `${text}…`, pending: true });
+    status("Yappy is on it");
+    try {
+      const answer = await talk({ said, state, recent: recentRef.current, strip: stripRef.current }, footage, ctrl.signal, status, (strip) => (stripRef.current = strip));
+      if (ctrl.signal.aborted) return;
+      const seen = answer.looked ? ` (Yappy looked at ${answer.looked} keyframes of your video)` : "";
+      if (answer.question) {
+        remember(said, `asked: ${answer.question}`);
+        return setCommand({ said, ok: true, text: answer.question + seen, choices: answer.choices.slice(0, 4) });
+      }
+      const commands = answer.actions.map(toCommand).filter((c): c is Command => c !== null);
+      const r = commands.length ? await runAll(commands, spoken) : { ok: !!answer.reply, text: "" };
+      if (ctrl.signal.aborted) return;
+      // Yappy's own words when it gave some; what the editor did only adds a step that failed.
+      const text = (r.ok ? answer.reply || r.text : [answer.reply, r.text].filter(Boolean).join(" · ")) || "Yappy didn't find anything to do for that.";
+      remember(said, text);
+      setCommand({ said, ok: r.ok, text: text + seen });
+    } catch (e) {
+      if (ctrl.signal.aborted) return;
+      setCommand({ said, ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      if (talkJob.current === ctrl) talkJob.current = null;
+    }
+  };
+
+  // Exact commands run at once; everything else goes to Yappy.
+  const runCommand = (said: string, spoken: boolean) => {
+    const commands = parseCommands(said);
+    if (!commands || !commands.every(isExact)) return void askYappy(said, spoken);
+    talkJob.current?.abort(); // a newer command wins over one Yappy is still thinking about
+    void runAll(commands, spoken).then((r) => {
+      remember(said, r.text);
+      setCommand({ said, ok: r.ok, text: r.text });
+    });
+  };
+
+  // A dictation that lands with nothing focused is taken as a command too.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if (!source || dialog) return;
+      const el = document.activeElement as HTMLElement | null;
+      if (el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT" || el.isContentEditable)) return;
+      const said = e.clipboardData?.getData("text/plain").trim();
+      if (!said) return;
+      e.preventDefault();
+      runCommand(said, true);
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  });
+
+  // Keyboard: Space play/pause, N note at the centre, arrows seek, Cmd/Ctrl+Enter apply, hold O for the original, / for a command.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!source || !player || dialog) return;
       const target = e.target as HTMLElement;
-      if (target.tagName === "TEXTAREA" || target.tagName === "INPUT" || target.isContentEditable) return;
-      if (e.key === " ") {
+      // The command bar lets Space and the arrows through while it's empty.
+      const passed = target.dataset.passKeys !== undefined && !(target as HTMLInputElement).value && [" ", "ArrowLeft", "ArrowRight"].includes(e.key);
+      if ((target.tagName === "TEXTAREA" || target.tagName === "INPUT" || target.isContentEditable) && !passed) return;
+      if (e.key === "/" && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        commandRef.current?.focus();
+      } else if (e.key === " ") {
         e.preventDefault();
         togglePlay();
       } else if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
@@ -694,7 +947,7 @@ export default function App() {
             <Stage
               player={player}
               aspect={source.width / source.height}
-              notes={isLatest ? notes : []}
+              notes={isLatest ? notes.filter((n) => !n.unpinned) : []}
               canvasRef={canvasRef}
               onTick={(outT, srcT, playing) => setUi({ outT, srcT, playing })}
               onPoint={point}
@@ -773,9 +1026,10 @@ export default function App() {
                 <kbd>Space</kbd> play · <kbd>N</kbd> note · <kbd>←</kbd>
                 <kbd>→</kbd> seek · <kbd>⌘</kbd>
                 <kbd>↵</kbd> apply · <kbd>⌘</kbd>
-                <kbd>Z</kbd> undo · hold <kbd>O</kbd> original
+                <kbd>Z</kbd> undo · hold <kbd>O</kbd> original · <kbd>/</kbd> command
               </span>
             </div>
+            <CommandBar inputRef={commandRef} result={command} onRun={runCommand} />
             <Timeline
               segs={player.segs}
               length={length}

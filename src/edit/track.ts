@@ -3,6 +3,7 @@
 // grayscale patches. Tracking compares the patch inside a box with the patch
 // at the pinned moment, so an overlay can end when what it covers leaves.
 import { mediaEvent, seekTo } from "./media";
+import { differs, scenes, stripStep } from "./scenes";
 import type { Edit } from "./types";
 
 export interface Box {
@@ -14,6 +15,14 @@ export interface Box {
 
 // When the content of a box stays the same. Open ends mean the search reached
 // its limit (or the video's edge) without seeing a change.
+// One frame per scene for Yappy to find things by what's on screen: t is when the
+// frame was taken, from when the scene starts (see scenes.ts).
+export interface Keyframe {
+  t: number;
+  from: number;
+  jpeg: string;
+}
+
 export interface Span {
   start: number;
   end: number;
@@ -27,6 +36,7 @@ const PIXEL = 0.16; // a pixel changed when its grey level moved this much (0–
 const SHARE = 0.05; // a box changed when this share of its pixels did
 const IDLE_MS = 1500; // a gap this long between reads counts as idle
 const BLUR_PAD = 0.35; // fades count as change late, so a blur starts early and ends late
+const WHOLE: Box = { x: 0, y: 0, w: 1, h: 1 };
 
 export class Footage {
   private video: HTMLVideoElement;
@@ -35,6 +45,7 @@ export class Footage {
   private queue: Promise<unknown> = Promise.resolve();
   private ready: Promise<void>;
   private lastSeek = 0;
+  private strip: Promise<Keyframe[]> | null = null;
 
   constructor(
     url: string,
@@ -127,12 +138,7 @@ export class Footage {
   // How long the content inside box stays as it is at time `at`.
   async span(box: Box, at: number): Promise<Span> {
     const ref = await this.patch(at, box);
-    const same = async (t: number) => {
-      const p = await this.patch(t, box);
-      let changed = 0;
-      for (let i = 0; i < p.length; i++) if (Math.abs(p[i] - ref[i]) > PIXEL) changed++;
-      return changed / p.length < SHARE;
-    };
+    const same = async (t: number) => !differs(ref, await this.patch(t, box), SHARE, PIXEL);
     // Walk out in coarse steps, then narrow the change down to ~0.03 s.
     const edge = async (dir: 1 | -1): Promise<{ t: number; open: boolean }> => {
       const limit = dir > 0 ? Math.min(this.duration, at + REACH) : Math.max(0, at - REACH);
@@ -155,6 +161,23 @@ export class Footage {
     const end = await edge(1);
     const start = await edge(-1);
     return { start: round(start.t), end: round(end.t), openStart: start.open, openEnd: end.open };
+  }
+
+  // The keyframe strip, built once per video on first need: the whole frame
+  // sampled through the video and split into scenes (scenes.ts).
+  keyframes(max = 36): Promise<Keyframe[]> {
+    this.strip ??= this.buildStrip(max);
+    this.strip.catch(() => (this.strip = null)); // a failed build can be tried again
+    return this.strip;
+  }
+
+  private async buildStrip(max: number): Promise<Keyframe[]> {
+    const step = stripStep(this.duration);
+    const samples = [];
+    for (let t = 0; t < this.duration - 0.05; t += step) samples.push({ t: round(t), grey: await this.patch(t, WHOLE) });
+    const strip: Keyframe[] = [];
+    for (const s of scenes(samples, max)) strip.push({ t: s.t, from: s.from, jpeg: await this.frame(s.t, 320) });
+    return strip;
   }
 }
 

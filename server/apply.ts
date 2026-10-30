@@ -118,7 +118,7 @@ Yapifier never changes the pixels inside the footage. It edits on top of and aro
 - title: an animated title card inserted at "at" (0 = before the video starts, the video's duration = at the end) for "duration" seconds, with text (up to 50 characters) and an optional sub line.
 - volume: level from start to end (0 = mute, 0.3 = quieter, 1.3 = louder).
 
-Coordinates: x, y, w and h are fractions of the full video frame (0–1, origin top-left). The pinned spot is already in these units. Use the image to size boxes so they cover the thing the director means, with a little margin. A highlight or blur box must contain the pinned spot. For blur, cover the whole sensitive item (the full email, name or key, start to end) and err on the large side: a blur that misses a few characters leaks them. If the image is zoomed in by an existing zoom edit, trust the pinned coordinates over what you see.
+Coordinates: x, y, w and h are fractions of the full video frame (0–1, origin top-left). The pinned spot is already in these units. Use the image to size boxes so they cover the thing the director means, with a little margin. When they pointed at a spot, a highlight or blur box must contain it; a note said without pointing names what it means, so find that in the frame. For blur, cover the whole sensitive item (the full email, name or key, start to end) and err on the large side: a blur that misses a few characters leaks them. If the image is zoomed in by an existing zoom edit, trust the pinned coordinates over what you see.
 
 Times are seconds in the original video. The pinned moment is srcT. Sensible defaults when the director doesn't say: zoom, callout and highlight start about 0.3 s before srcT and last about 3 s, but never past the tracked span; freeze 2 s; title 2.5 s. A blur covers its whole tracked span, so the item is never visible unblurred.
 
@@ -150,7 +150,7 @@ function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
 
-function redact(text: string): string {
+export function redact(text: string): string {
   return text
     .replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, "[email]")
     .replace(/\b(?:sk|pk|ghp|xox[abp])[-_][A-Za-z0-9_-]{12,}\b/g, "[secret]")
@@ -254,9 +254,10 @@ export async function handleApply(request: Request): Promise<Response> {
     const followUp = n.answer
       ? `\nYou asked earlier: ${String(n.question ?? "").slice(0, MAX_NOTE_CHARS)}\n<answer>${redact(String(n.answer).slice(0, MAX_NOTE_CHARS))}</answer>`
       : "";
+    const spot = n.x >= 0 && n.y >= 0 ? `pointed at x ${Number(n.x).toFixed(3)}, y ${Number(n.y).toFixed(3)}` : "said without pointing at a spot";
     content.push({
       type: "text",
-      text: `Note ${n.id}${frame ? " (frame above)" : ""}: paused at srcT ${Number(n.srcT).toFixed(2)} s, pointed at x ${Number(n.x).toFixed(3)}, y ${Number(n.y).toFixed(3)}.\n<note>${redact(String(n.text).slice(0, MAX_NOTE_CHARS))}</note>${followUp}`,
+      text: `Note ${n.id}${frame ? " (frame above)" : ""}: paused at srcT ${Number(n.srcT).toFixed(2)} s, ${spot}.\n<note>${redact(String(n.text).slice(0, MAX_NOTE_CHARS))}</note>${followUp}`,
     });
   }
 

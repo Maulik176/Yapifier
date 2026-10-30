@@ -42,6 +42,7 @@ export interface Pin {
 
 export interface Note extends Pin {
   id: string;
+  unpinned?: boolean; // said in the command bar without clicking: x and y are only the centre
   text: string;
   author: string;
   spoken: boolean;
